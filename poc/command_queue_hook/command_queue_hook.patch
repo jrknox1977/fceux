@@ -1,0 +1,101 @@
+diff --git a/src/drivers/Qt/fceuWrapper.cpp b/src/drivers/Qt/fceuWrapper.cpp
+index 1234567..abcdefg 100644
+--- a/src/drivers/Qt/fceuWrapper.cpp
++++ b/src/drivers/Qt/fceuWrapper.cpp
+@@ -25,6 +25,9 @@
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
++#include <queue>
++#include <mutex>
++#include <atomic>
+ 
+ #include <sys/time.h>
+ #include <sys/stat.h>
+@@ -123,6 +126,54 @@ static bool turbo = false;
+ int frameSkipAdjustment = 0;
+ bool AutoResumePlay = false;
+ 
++// REST API Command Queue Implementation
++namespace RestApi {
++
++struct ApiCommand {
++    enum Type { 
++        PAUSE, 
++        UNPAUSE, 
++        FRAME_ADVANCE, 
++        PRINT_MESSAGE  // Simple test command
++    };
++    Type type;
++    std::string params;
++};
++
++static std::queue<ApiCommand> g_apiCommandQueue;
++static std::mutex g_apiCommandMutex;
++static std::atomic<bool> g_apiEnabled(false);
++
++void enableApi(bool enable) {
++    g_apiEnabled.store(enable);
++    if (enable) {
++        printf("REST API: Command processing enabled\n");
++    } else {
++        printf("REST API: Command processing disabled\n");
++    }
++}
++
++void queueCommand(const ApiCommand& cmd) {
++    std::lock_guard<std::mutex> lock(g_apiCommandMutex);
++    g_apiCommandQueue.push(cmd);
++}
++
++static void processApiCommands() {
++    std::lock_guard<std::mutex> lock(g_apiCommandMutex);
++    
++    while (!g_apiCommandQueue.empty()) {
++        ApiCommand cmd = g_apiCommandQueue.front();
++        g_apiCommandQueue.pop();
++        
++        switch (cmd.type) {
++            case ApiCommand::PRINT_MESSAGE:
++                printf("REST API: Frame %d - %s\n", FCEUI_GetFrameCount(), cmd.params.c_str());
++                break;
++            // Add more command handlers here
++        }
++    }
++}
++
++} // namespace RestApi
+ 
+ // global configuration object
+ Config *g_config = NULL;
+@@ -1466,6 +1517,11 @@ int fceuWrapperUpdate(void)
+ 
+ 	fceuWrapperLock();
+ 
++	// Process REST API commands if enabled
++	if (RestApi::g_apiEnabled.load()) {
++		RestApi::processApiCommands();
++	}
++
+ 	ResetDebugStatisticsCounters();
+ 
+ 	fpsThrottlingControl();
+@@ -1526,3 +1582,17 @@ int fceuWrapperUpdate(void)
+ 
+ 	return 0;
+ }
++
++// Test function to demonstrate command queue
++extern "C" void testApiCommandQueue() {
++    RestApi::enableApi(true);
++    
++    // Queue some test commands
++    for (int i = 0; i < 5; i++) {
++        RestApi::ApiCommand cmd;
++        cmd.type = RestApi::ApiCommand::PRINT_MESSAGE;
++        cmd.params = "Test message " + std::to_string(i);
++        RestApi::queueCommand(cmd);
++    }
++    
++    printf("REST API: Queued 5 test commands\n");
++}
