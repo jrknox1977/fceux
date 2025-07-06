@@ -49,3 +49,4 @@ fceux-net-server
 
 # typical CMake build directory
 /build
+.claude/
