@@ -956,7 +956,7 @@ InitConfig()
 	config->addOption("4buttonexit", "SDL.ABStartSelectExit", 0);
 
 	// REST API Options
-	config->addOption("SDL.RestApiEnabled", 0);
+	config->addOption("SDL.RestApiEnabled", 1);
 	config->addOption("SDL.RestApiPort", 8080);
 	config->addOption("SDL.RestApiBindAddress", "127.0.0.1");
 
