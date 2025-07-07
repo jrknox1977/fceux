@@ -47,6 +47,23 @@ protected:
 };
 ```
 
+## GUI Usage
+
+When built with REST API support, FCEUX provides GUI controls:
+
+1. **Tools Menu**: Go to Tools → REST API Server
+2. **Toggle Server**: Click to enable/disable the server
+3. **Status Bar**: Shows "REST API: Running on 127.0.0.1:8080" when active
+4. **Persistence**: Server state is saved and restored on restart
+5. **Default**: Server is enabled by default for convenience
+
+## Configuration
+
+The REST API server can be configured through FCEUX settings:
+- `SDL.RestApiEnabled`: Whether to start server on launch (default: 1)
+- `SDL.RestApiPort`: Server port (default: 8080, valid range: 1-65535)
+- `SDL.RestApiBindAddress`: Bind address (default: "127.0.0.1")
+
 ## Building
 
 The REST API is enabled with the CMake option:
@@ -95,9 +112,32 @@ signals:
     void errorOccurred(const QString& error);  // Emitted on errors
 ```
 
+## Current API Endpoints
+
+### System Endpoints
+- `GET /api/system/info` - Returns FCEUX version and build information
+- `GET /api/system/ping` - Health check endpoint
+- `GET /api/system/capabilities` - Lists available API features
+
+### Testing the API
+```bash
+# Check if server is running
+curl http://localhost:8080/api/system/ping
+
+# Get FCEUX version info
+curl http://localhost:8080/api/system/info
+
+# List API capabilities
+curl http://localhost:8080/api/system/capabilities
+```
+
 ## Future Enhancements
 
 - WebSocket support for real-time updates
 - SSL/TLS support (requires httplib SSL build)
 - Authentication/authorization middleware
 - Request logging and metrics
+- Emulation control endpoints (pause, resume, reset)
+- Memory access endpoints
+- Save state management
+- Screenshot capture
