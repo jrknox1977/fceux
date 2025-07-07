@@ -38,6 +38,7 @@
 
 #ifdef __FCEU_REST_API_ENABLE__
 class FceuxApiServer;
+struct RestApiConfig;
 #endif
 
 class  emulatorThread_t : public QThread
@@ -336,6 +337,9 @@ class  consoleWin_t : public QMainWindow
 		void loadState(int slot);
 		void transferVideoBuffer(bool allowRedraw);
 		void syncAutoFirePatternMenu(void);
+#ifdef __FCEU_REST_API_ENABLE__
+		RestApiConfig loadRestApiConfig(void);
+#endif
 
 		QString findHelpFile(void);
 

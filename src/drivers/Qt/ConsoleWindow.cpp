@@ -326,19 +326,9 @@ consoleWin_t::consoleWin_t(QWidget *parent)
 	g_config->getOption("SDL.RestApiEnabled", &restApiEnabled);
 	
 	if (restApiEnabled) {
-		// Load configuration
-		RestApiConfig apiConfig;
-		int port = 8080;
-		std::string bindAddr = "127.0.0.1";
-		
-		g_config->getOption("SDL.RestApiPort", &port);
-		g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
-		
-		apiConfig.port = port;
-		apiConfig.bindAddress = QString::fromStdString(bindAddr);
+		// Load configuration and start server
+		RestApiConfig apiConfig = loadRestApiConfig();
 		apiServer->setConfig(apiConfig);
-		
-		// Start the server
 		apiServer->start();
 	}
 #endif
@@ -3399,16 +3389,8 @@ void consoleWin_t::toggleRestApiServer(bool checked)
 	}
 	
 	if (checked) {
-		// Load configuration
-		RestApiConfig apiConfig;
-		int port = 8080;
-		std::string bindAddr = "127.0.0.1";
-		
-		g_config->getOption("SDL.RestApiPort", &port);
-		g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
-		
-		apiConfig.port = port;
-		apiConfig.bindAddress = QString::fromStdString(bindAddr);
+		// Load configuration and start server
+		RestApiConfig apiConfig = loadRestApiConfig();
 		apiServer->setConfig(apiConfig);
 		
 		// Start the server
@@ -3463,6 +3445,28 @@ void consoleWin_t::onRestApiServerError(const QString& error)
 	if (restApiAct && restApiAct->isChecked()) {
 		restApiAct->setChecked(false);
 	}
+}
+
+RestApiConfig consoleWin_t::loadRestApiConfig(void)
+{
+	RestApiConfig apiConfig;
+	int port = 8080;
+	std::string bindAddr = "127.0.0.1";
+	
+	// Load from configuration
+	g_config->getOption("SDL.RestApiPort", &port);
+	g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
+	
+	// Validate port range (1-65535)
+	if (port < 1 || port > 65535) {
+		FCEU_DispMessage("Invalid REST API port %d, using default 8080", 1, port);
+		port = 8080;
+	}
+	
+	apiConfig.port = port;
+	apiConfig.bindAddress = QString::fromStdString(bindAddr);
+	
+	return apiConfig;
 }
 #endif
 

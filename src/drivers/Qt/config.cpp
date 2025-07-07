@@ -957,7 +957,7 @@ InitConfig()
 
 	// REST API Options
 	config->addOption("SDL.RestApiEnabled", 1);
-	config->addOption("SDL.RestApiPort", 8080);
+	config->addOption("SDL.RestApiPort", 8080);  // Valid range: 1-65535
 	config->addOption("SDL.RestApiBindAddress", "127.0.0.1");
 
 	// GamePad 0 - 3
