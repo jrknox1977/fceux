@@ -78,6 +78,11 @@
 #define strncasecmp _strnicmp
 #define strcasecmp _stricmp
 #endif
+
+#ifdef __FCEU_REST_API_ENABLE__
+#include "Qt/RestApi/CommandQueue.h"
+#include "Qt/RestApi/RestApiCommands.h"
+#endif
 //*****************************************************************
 // Define Global Variables to be shared with FCEU Core
 //*****************************************************************
@@ -117,6 +122,98 @@ extern double g_fpsScale;
 #ifdef CREATE_AVI
 int mutecapture = 0;
 #endif
+
+#ifdef __FCEU_REST_API_ENABLE__
+// Global command queue instance
+static CommandQueue g_restApiCommandQueue;
+
+// Command execution history (circular buffer)
+static std::vector<CommandExecutionResult> g_commandHistory;
+static FCEU::mutex g_historyMutex;
+static const size_t MAX_HISTORY_SIZE = 100;
+
+// Global accessor function
+CommandQueue& getRestApiCommandQueue() {
+    return g_restApiCommandQueue;
+}
+
+// Get recent command execution errors
+std::vector<CommandExecutionResult> getRecentCommandErrors(size_t maxCount) {
+    FCEU::autoScopedLock lock(g_historyMutex);
+    std::vector<CommandExecutionResult> errors;
+    
+    // Extract only errors from history
+    for (const auto& result : g_commandHistory) {
+        if (!result.success && errors.size() < maxCount) {
+            errors.push_back(result);
+        }
+    }
+    
+    return errors;
+}
+
+// Add result to history (internal use)
+static void addCommandResult(const CommandExecutionResult& result) {
+    FCEU::autoScopedLock lock(g_historyMutex);
+    
+    // Circular buffer behavior
+    if (g_commandHistory.size() >= MAX_HISTORY_SIZE) {
+        g_commandHistory.erase(g_commandHistory.begin());
+    }
+    
+    g_commandHistory.push_back(result);
+}
+
+// Process commands from the REST API queue
+static void processApiCommands() {
+    // Only process if emulator is running
+    if (!GameInfo) {
+        return;
+    }
+    
+    const int MAX_COMMANDS_PER_FRAME = 10;
+    int processed = 0;
+    
+    while (processed < MAX_COMMANDS_PER_FRAME) {
+        auto cmd = g_restApiCommandQueue.tryPop();
+        if (!cmd) {
+            break;  // No more commands
+        }
+        
+        CommandExecutionResult result;
+        result.commandName = cmd->name();
+        result.timestamp = std::chrono::system_clock::now();
+        
+        // Execute command with error handling
+        try {
+            cmd->execute();
+            result.success = true;
+        } catch (const std::exception& e) {
+            result.success = false;
+            result.errorMessage = e.what();
+            FCEU_printf("REST API Command '%s' failed: %s\n", 
+                       cmd->name(), e.what());
+        } catch (...) {
+            result.success = false;
+            result.errorMessage = "Unknown exception";
+            FCEU_printf("REST API Command '%s' failed: Unknown exception\n", 
+                       cmd->name());
+        }
+        
+        // Track execution result
+        addCommandResult(result);
+        
+        processed++;
+    }
+}
+
+// Cleanup function for shutdown
+void cleanupRestApiCommandQueue() {
+    // Clear pending commands to prevent hanging futures
+    g_restApiCommandQueue.clear();
+}
+#endif
+
 //*****************************************************************
 // Define Global Functions to be shared with FCEU Core
 //*****************************************************************
@@ -1516,6 +1613,11 @@ int  fceuWrapperUpdate( void )
  
 	if ( GameInfo )
 	{
+#ifdef __FCEU_REST_API_ENABLE__
+		// Process REST API commands early in the frame
+		processApiCommands();
+#endif
+
 #ifdef __FCEU_QSCRIPT_ENABLE__
 		auto* qscriptMgr = QtScriptManager::getInstance();
 
