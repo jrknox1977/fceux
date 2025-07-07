@@ -78,6 +78,11 @@
 #define strncasecmp _strnicmp
 #define strcasecmp _stricmp
 #endif
+
+#ifdef __FCEU_REST_API_ENABLE__
+#include "Qt/RestApi/CommandQueue.h"
+#include "Qt/RestApi/RestApiCommands.h"
+#endif
 //*****************************************************************
 // Define Global Variables to be shared with FCEU Core
 //*****************************************************************
@@ -117,6 +122,54 @@ extern double g_fpsScale;
 #ifdef CREATE_AVI
 int mutecapture = 0;
 #endif
+
+#ifdef __FCEU_REST_API_ENABLE__
+// Global command queue instance
+static CommandQueue g_restApiCommandQueue;
+
+// Global accessor function
+CommandQueue& getRestApiCommandQueue() {
+    return g_restApiCommandQueue;
+}
+
+// Process commands from the REST API queue
+static void processApiCommands() {
+    // Only process if emulator is running
+    if (!GameInfo) {
+        return;
+    }
+    
+    const int MAX_COMMANDS_PER_FRAME = 10;
+    int processed = 0;
+    
+    while (processed < MAX_COMMANDS_PER_FRAME) {
+        auto cmd = g_restApiCommandQueue.tryPop();
+        if (!cmd) {
+            break;  // No more commands
+        }
+        
+        // Execute command with error handling
+        try {
+            cmd->execute();
+        } catch (const std::exception& e) {
+            FCEU_printf("REST API Command '%s' failed: %s\n", 
+                       cmd->name(), e.what());
+        } catch (...) {
+            FCEU_printf("REST API Command '%s' failed: Unknown exception\n", 
+                       cmd->name());
+        }
+        
+        processed++;
+    }
+}
+
+// Cleanup function for shutdown
+void cleanupRestApiCommandQueue() {
+    // Clear pending commands to prevent hanging futures
+    g_restApiCommandQueue.clear();
+}
+#endif
+
 //*****************************************************************
 // Define Global Functions to be shared with FCEU Core
 //*****************************************************************
@@ -1516,6 +1569,11 @@ int  fceuWrapperUpdate( void )
  
 	if ( GameInfo )
 	{
+#ifdef __FCEU_REST_API_ENABLE__
+		// Process REST API commands early in the frame
+		processApiCommands();
+#endif
+
 #ifdef __FCEU_QSCRIPT_ENABLE__
 		auto* qscriptMgr = QtScriptManager::getInstance();
 

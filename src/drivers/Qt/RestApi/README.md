@@ -77,7 +77,9 @@ cmake .. -DREST_API=ON
 ### Threading Model
 
 - **Main Thread**: Qt event loop, handles signals/slots
+- **Emulator Thread**: Runs NES emulation, processes commands
 - **Server Thread**: Runs HTTP server, blocks on `listen()`
+- **Command Queue**: Thread-safe communication between server and emulator
 - **Synchronization**: Promise/future for startup, atomic bool for state
 
 ### Error Handling
@@ -130,6 +132,48 @@ curl http://localhost:8080/api/system/info
 # List API capabilities
 curl http://localhost:8080/api/system/capabilities
 ```
+
+## Command Queue Architecture
+
+The command queue enables thread-safe communication between the REST API server and emulator thread.
+
+### Basic Usage
+
+```cpp
+#include "Qt/RestApi/CommandQueue.h"
+#include "Qt/RestApi/RestApiCommands.h"
+
+// Define a command
+class PauseCommand : public ApiCommandWithResult<bool> {
+public:
+    void execute() override {
+        bool success = FCEUI_SetEmulationPaused(true);
+        resultPromise.set_value(success);
+    }
+    const char* name() const override { return "PauseCommand"; }
+};
+
+// Submit from REST endpoint
+auto cmd = std::make_unique<PauseCommand>();
+auto future = cmd->getResult();
+getRestApiCommandQueue().push(std::move(cmd));
+
+// Wait for result with timeout
+if (future.wait_for(std::chrono::seconds(2)) == std::future_status::ready) {
+    bool success = future.get();
+}
+```
+
+### Thread Safety
+- Commands execute on emulator thread with mutex already held
+- Queue operations are protected by FCEU::mutex
+- Results returned via promise/future pattern
+- Maximum 10 commands processed per frame to maintain performance
+
+### Command Types
+- `ApiCommand`: Base class for all commands
+- `ApiCommandWithResult<T>`: For commands that return values
+- `ApiCommandVoid`: Convenience class for void commands
 
 ## Future Enhancements
 
