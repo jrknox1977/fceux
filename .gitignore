@@ -50,3 +50,7 @@ fceux-net-server
 # typical CMake build directory
 /build
 .claude/
+
+# REST API header-only libraries
+src/lib/*.h
+src/lib/*.hpp

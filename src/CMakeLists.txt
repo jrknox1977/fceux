@@ -196,6 +196,15 @@ else(WIN32)
 	message( STATUS "Address Sanitizer Disabled" )
   endif()
 
+  # REST API Support
+  if ( ${REST_API} )
+	set(CMAKE_CXX_STANDARD 11)
+	set(CMAKE_CXX_STANDARD_REQUIRED ON)
+	add_definitions( -D__FCEU_REST_API_ENABLE__ )
+	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib)
+	message( STATUS "REST API Support Enabled" )
+  endif()
+
   # Check for libminizip
   pkg_check_modules( MINIZIP REQUIRED minizip)
 
