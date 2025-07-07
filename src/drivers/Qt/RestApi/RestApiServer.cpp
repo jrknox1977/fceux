@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cerrno>
 #include <cstring>
+#include <chrono>
 
 RestApiServer::RestApiServer(QObject* parent)
     : QObject(parent)
@@ -11,6 +12,7 @@ RestApiServer::RestApiServer(QObject* parent)
     , m_port(8080)
     , m_readTimeoutSec(5)
     , m_writeTimeoutSec(5)
+    , m_startupTimeoutSec(5)
     , m_lastError(ErrorCode::None)
 {
 }
@@ -45,20 +47,44 @@ bool RestApiServer::start(int port)
         // Allow subclasses to register their routes
         registerRoutes();
 
+        // Reset promise for new startup
+        m_startupPromise = std::promise<bool>();
+        std::future<bool> startupFuture = m_startupPromise.get_future();
+
         // Start server thread
         m_running = true;
         m_serverThread = std::thread(&RestApiServer::serverThreadFunc, this);
 
-        // Give the server a moment to start
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        // Check if server is actually running
-        if (m_running.load()) {
-            emit serverStarted();
-            return true;
-        } else {
-            m_lastError = ErrorCode::ThreadStartFailed;
-            emit errorOccurred(errorCodeToString(m_lastError));
+        // Wait for server to start with timeout
+        try {
+            auto status = startupFuture.wait_for(std::chrono::seconds(m_startupTimeoutSec));
+            
+            if (status == std::future_status::ready) {
+                bool success = startupFuture.get();
+                if (success) {
+                    emit serverStarted();
+                    return true;
+                } else {
+                    // Error already set and signal emitted in serverThreadFunc
+                    return false;
+                }
+            } else {
+                // Timeout waiting for server to start
+                m_running = false;
+                m_lastError = ErrorCode::ThreadStartFailed;
+                emit errorOccurred("Server startup timed out");
+                
+                // Clean up the thread
+                if (m_serverThread.joinable()) {
+                    m_serverThread.join();
+                }
+                return false;
+            }
+        } catch (const std::exception& e) {
+            m_running = false;
+            m_lastError = ErrorCode::Unknown;
+            QString error = QString("Server startup failed: %1").arg(e.what());
+            emit errorOccurred(error);
             return false;
         }
 
@@ -138,6 +164,11 @@ void RestApiServer::serverThreadFunc()
 {
     if (!m_server) {
         m_running = false;
+        try {
+            m_startupPromise.set_value(false);
+        } catch (const std::future_error&) {
+            // Promise already set, ignore
+        }
         return;
     }
 
@@ -152,14 +183,31 @@ void RestApiServer::serverThreadFunc()
         if (savedErrno == EADDRINUSE) {
             m_lastError = ErrorCode::PortInUse;
             QString error = QString("Port %1 is already in use").arg(m_port);
-            emit errorOccurred(error);
+            emit errorOccurred(error);  // Thread-safe: Qt queued connection
         } else {
             m_lastError = ErrorCode::BindFailed;
             QString error = QString("Failed to bind to port %1: %2")
                 .arg(m_port)
                 .arg(std::strerror(savedErrno));
-            emit errorOccurred(error);
+            emit errorOccurred(error);  // Thread-safe: Qt queued connection
         }
+        
+        // Notify waiting thread of failure
+        try {
+            m_startupPromise.set_value(false);
+        } catch (const std::future_error&) {
+            // Promise already set, ignore
+        }
+    } else {
+        // Server started successfully
+        try {
+            m_startupPromise.set_value(true);
+        } catch (const std::future_error&) {
+            // Promise already set, ignore
+        }
+        
+        // Server will block here until stop() is called
+        // listen() returns when server->stop() is called
     }
 
     m_running = false;

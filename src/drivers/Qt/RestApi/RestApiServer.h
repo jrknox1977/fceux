@@ -8,6 +8,8 @@
 #include <memory>
 #include <functional>
 #include <string>
+#include <future>
+#include <mutex>
 
 // Forward declaration to avoid including httplib.h in header
 namespace httplib {
@@ -16,6 +18,14 @@ namespace httplib {
     struct Response;
 }
 
+/**
+ * @brief HTTP REST API Server with Qt integration
+ * 
+ * Thread Safety: This class uses Qt signals which are thread-safe. Signals emitted
+ * from the server thread (errorOccurred) use Qt's default queued connections when
+ * connecting to slots in different threads, ensuring thread-safe communication.
+ * See Qt documentation on signal/slot connections across threads.
+ */
 class RestApiServer : public QObject
 {
     Q_OBJECT
@@ -43,6 +53,7 @@ public:
     int getPort() const { return m_port; }
     void setReadTimeout(int seconds) { m_readTimeoutSec = seconds; }
     void setWriteTimeout(int seconds) { m_writeTimeoutSec = seconds; }
+    void setStartupTimeout(int seconds) { m_startupTimeoutSec = seconds; }
 
 signals:
     void serverStarted();
@@ -68,9 +79,11 @@ private:
     std::unique_ptr<httplib::Server> m_server;
     std::thread m_serverThread;
     std::atomic<bool> m_running;
+    std::promise<bool> m_startupPromise;
     int m_port;
     int m_readTimeoutSec;
     int m_writeTimeoutSec;
+    int m_startupTimeoutSec;
     ErrorCode m_lastError;
 };
 
