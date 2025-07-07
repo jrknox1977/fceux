@@ -277,6 +277,9 @@ class  consoleWin_t : public QMainWindow
 		QAction *netPlayClientStatAct;
 		//QAction *aviHudAct;
 		//QAction *aviMsgAct;
+#ifdef __FCEU_REST_API_ENABLE__
+		QAction *restApiAct;
+#endif
 
 		QTimer  *gameTimer;
 		QColor   videoBgColor;
@@ -369,6 +372,12 @@ class  consoleWin_t : public QMainWindow
 		void openOfflineDocs(void);
 		void openTasEditor(void);
 		void openMsgLogWin(void);
+#ifdef __FCEU_REST_API_ENABLE__
+		void toggleRestApiServer(bool checked);
+		void onRestApiServerStarted(void);
+		void onRestApiServerStopped(void);
+		void onRestApiServerError(const QString& error);
+#endif
 		void openInputConfWin(void);
 		void openGameSndConfWin(void);
 		void openGameVideoConfWin(void);

@@ -955,6 +955,11 @@ InitConfig()
 	// quit when a+b+select+start is pressed
 	config->addOption("4buttonexit", "SDL.ABStartSelectExit", 0);
 
+	// REST API Options
+	config->addOption("SDL.RestApiEnabled", 0);
+	config->addOption("SDL.RestApiPort", 8080);
+	config->addOption("SDL.RestApiBindAddress", "127.0.0.1");
+
 	// GamePad 0 - 3
 	for(unsigned int i = 0; i < GAMEPAD_NUM_DEVICES; i++) 
 	{

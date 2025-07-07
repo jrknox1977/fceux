@@ -42,6 +42,7 @@
 #include <QMessageBox>
 #include <QInputDialog>
 #include <QDesktopServices>
+#include <QStatusBar>
 #include <QStyleFactory>
 #include <QApplication>
 #include <QActionGroup>
@@ -315,33 +316,30 @@ consoleWin_t::consoleWin_t(QWidget *parent)
 	// Initialize REST API server
 	apiServer = new FceuxApiServer(this);
 	
-	// Load configuration from g_config
-	RestApiConfig apiConfig;
-	int port = 8080;
-	std::string bindAddr = "127.0.0.1";
+	// Connect signals
+	connect(apiServer, &RestApiServer::errorOccurred, this, &consoleWin_t::onRestApiServerError);
+	connect(apiServer, &RestApiServer::serverStarted, this, &consoleWin_t::onRestApiServerStarted);
+	connect(apiServer, &RestApiServer::serverStopped, this, &consoleWin_t::onRestApiServerStopped);
 	
-	g_config->getOption("SDL.RestApiPort", &port);
-	g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
+	// Start server if enabled in configuration
+	bool restApiEnabled = false;
+	g_config->getOption("SDL.RestApiEnabled", &restApiEnabled);
 	
-	apiConfig.port = port;
-	apiConfig.bindAddress = QString::fromStdString(bindAddr);
-	apiServer->setConfig(apiConfig);
-	
-	// Connect error signal
-	connect(apiServer, &RestApiServer::errorOccurred, this, [this](const QString& error) {
-		FCEU_DispMessage("REST API Error: %s", 1, error.toStdString().c_str());
-	});
-	
-	// Connect success signal
-	connect(apiServer, &RestApiServer::serverStarted, this, [this]() {
-		FCEU_DispMessage("REST API server successfully started", 0);
-	});
-	
-	// Start the server
-	if (apiServer->start()) {
-		FCEU_DispMessage("REST API server started on port %d", 0, apiConfig.port);
-	} else {
-		FCEU_DispMessage("Failed to start REST API server", 1);
+	if (restApiEnabled) {
+		// Load configuration
+		RestApiConfig apiConfig;
+		int port = 8080;
+		std::string bindAddr = "127.0.0.1";
+		
+		g_config->getOption("SDL.RestApiPort", &port);
+		g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
+		
+		apiConfig.port = port;
+		apiConfig.bindAddress = QString::fromStdString(bindAddr);
+		apiServer->setConfig(apiConfig);
+		
+		// Start the server
+		apiServer->start();
 	}
 #endif
 }
@@ -1872,6 +1870,21 @@ void consoleWin_t::createMainMenu(void)
 
 	toolsMenu->addAction(act);
 
+#ifdef __FCEU_REST_API_ENABLE__
+	// Tools -> REST API Server
+	restApiAct = act = new QAction(tr("&REST API Server"), this);
+	act->setCheckable(true);
+	act->setStatusTip(tr("Enable/disable REST API server"));
+	connect(act, &QAction::toggled, this, &consoleWin_t::toggleRestApiServer);
+	
+	// Set initial checked state based on server status
+	bool restApiEnabled = false;
+	g_config->getOption("SDL.RestApiEnabled", &restApiEnabled);
+	act->setChecked(restApiEnabled);
+	
+	toolsMenu->addAction(act);
+#endif
+
 	 //-----------------------------------------------------------------------
 	 // Debug
 
@@ -3375,6 +3388,81 @@ void consoleWin_t::openTasEditor(void)
 	}
 	FCEU_WRAPPER_UNLOCK();
 }
+
+#ifdef __FCEU_REST_API_ENABLE__
+void consoleWin_t::toggleRestApiServer(bool checked)
+{
+	if (!apiServer) {
+		return;
+	}
+	
+	if (checked) {
+		// Load configuration
+		RestApiConfig apiConfig;
+		int port = 8080;
+		std::string bindAddr = "127.0.0.1";
+		
+		g_config->getOption("SDL.RestApiPort", &port);
+		g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
+		
+		apiConfig.port = port;
+		apiConfig.bindAddress = QString::fromStdString(bindAddr);
+		apiServer->setConfig(apiConfig);
+		
+		// Start the server
+		if (!apiServer->start()) {
+			// If start failed, uncheck the menu item
+			restApiAct->setChecked(false);
+		}
+	} else {
+		// Stop the server
+		apiServer->stop();
+	}
+	
+	// Save the enabled state to configuration
+	g_config->setOption("SDL.RestApiEnabled", checked);
+	g_config->save();
+}
+
+void consoleWin_t::onRestApiServerStarted(void)
+{
+	RestApiConfig config = apiServer->getConfig();
+	FCEU_DispMessage("REST API server started on %s:%d", 0, 
+		config.bindAddress.toStdString().c_str(), config.port);
+	
+	// Update status bar
+	if (this->statusBar()) {
+		this->statusBar()->showMessage(
+			QString("REST API: Running on %1:%2").arg(config.bindAddress).arg(config.port),
+			5000  // Show for 5 seconds
+		);
+	}
+}
+
+void consoleWin_t::onRestApiServerStopped(void)
+{
+	FCEU_DispMessage("REST API server stopped", 0);
+	
+	// Update status bar
+	if (this->statusBar()) {
+		this->statusBar()->showMessage("REST API: Stopped", 3000);
+	}
+}
+
+void consoleWin_t::onRestApiServerError(const QString& error)
+{
+	FCEU_DispMessage("REST API Error: %s", 1, error.toStdString().c_str());
+	
+	// Show error dialog
+	QMessageBox::critical(this, tr("REST API Error"), 
+		tr("Failed to start REST API server:\n%1").arg(error));
+	
+	// Uncheck the menu item if server failed to start
+	if (restApiAct && restApiAct->isChecked()) {
+		restApiAct->setChecked(false);
+	}
+}
+#endif
 
 void consoleWin_t::openMovieOptWin(void)
 {
