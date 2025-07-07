@@ -94,6 +94,36 @@ int main() {
     assert(result == 30);
     std::cout << "Result: " << result << std::endl;
     
+    // Test 3b: Command queue clear with pending promises
+    std::cout << "\nTest 3b: Queue clear with pending promises" << std::endl;
+    auto clearCmd1 = std::make_unique<AddCommand>(5, 10);
+    auto future1 = clearCmd1->getResult();
+    auto clearCmd2 = std::make_unique<AddCommand>(15, 20);
+    auto future2 = clearCmd2->getResult();
+    
+    queue.push(std::move(clearCmd1));
+    queue.push(std::move(clearCmd2));
+    
+    // Clear queue without executing commands
+    queue.clear();
+    
+    // Futures should throw exception when accessed
+    try {
+        future1.get();
+        assert(false); // Should not reach here
+    } catch (const std::runtime_error& e) {
+        std::cout << "Future1 correctly threw: " << e.what() << std::endl;
+        assert(std::string(e.what()).find("cancelled") != std::string::npos);
+    }
+    
+    try {
+        future2.get();
+        assert(false); // Should not reach here
+    } catch (const std::runtime_error& e) {
+        std::cout << "Future2 correctly threw: " << e.what() << std::endl;
+        assert(std::string(e.what()).find("cancelled") != std::string::npos);
+    }
+    
     // Test 4: Concurrent access
     std::cout << "\nTest 4: Concurrent access" << std::endl;
     std::atomic<int> producerCount{0};

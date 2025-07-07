@@ -16,6 +16,7 @@ class ApiCommand {
 public:
     virtual ~ApiCommand() = default;
     
+    
     /**
      * @brief Execute the command on the emulator thread
      * 
@@ -31,6 +32,19 @@ public:
      * @return Command name as C-string
      */
     virtual const char* name() const = 0;
+    
+    /**
+     * @brief Cancel the command with an exception
+     * 
+     * Called when command is destroyed without executing.
+     * Derived classes should override to set exception on any promises.
+     * 
+     * @param e Exception to set (typically "Command cancelled")
+     */
+    virtual void cancel(const std::exception_ptr& e) {
+        // Base implementation does nothing
+        // Commands with results should override
+    }
 };
 
 /**
@@ -72,6 +86,17 @@ public:
         } catch (const std::future_error&) {
             // Promise already satisfied, ignore
         }
+    }
+    
+    /**
+     * @brief Cancel the command with an exception
+     * 
+     * Override from ApiCommand to handle promise cancellation.
+     * 
+     * @param e Exception to set
+     */
+    void cancel(const std::exception_ptr& e) override {
+        setException(e);
     }
 };
 

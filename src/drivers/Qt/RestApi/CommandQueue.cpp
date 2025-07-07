@@ -52,9 +52,15 @@ size_t CommandQueue::size() const {
 void CommandQueue::clear() {
     FCEU::autoScopedLock lock(queueMutex);
     
-    // Pop and destroy all commands
-    // Note: This may leave futures in a broken promise state
+    // Cancel all pending commands before destroying
+    // This prevents futures from being left in broken promise state
     while (!commands.empty()) {
+        auto& cmd = commands.front();
+        
+        // Call virtual cancel method to handle promise cleanup
+        cmd->cancel(std::make_exception_ptr(
+            std::runtime_error("Command queue cleared - operation cancelled")));
+        
         commands.pop();
     }
 }

@@ -64,4 +64,32 @@ public:
     }
 };
 
+/**
+ * Example of how to use commands in REST endpoints with error handling
+ * 
+ * void handlePauseEndpoint(const httplib::Request& req, httplib::Response& res) {
+ *     try {
+ *         auto cmd = std::make_unique<PauseCommand>();
+ *         auto future = executeCommand(std::move(cmd));
+ *         
+ *         // Wait for result with timeout
+ *         bool changed = waitForResult(future, 2000);  // 2 second timeout
+ *         
+ *         // Return success response
+ *         nlohmann::json response;
+ *         response["success"] = true;
+ *         response["state_changed"] = changed;
+ *         res.set_content(response.dump(), "application/json");
+ *         
+ *     } catch (const std::exception& e) {
+ *         // Command failed - return error response
+ *         nlohmann::json error;
+ *         error["success"] = false;
+ *         error["error"] = e.what();
+ *         res.status = 500;
+ *         res.set_content(error.dump(), "application/json");
+ *     }
+ * }
+ */
+
 #endif // __EXAMPLE_COMMANDS_H__
