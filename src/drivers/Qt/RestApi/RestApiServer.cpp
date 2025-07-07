@@ -4,22 +4,27 @@
 #include <cerrno>
 #include <cstring>
 #include <chrono>
+#include <thread>
 
 RestApiServer::RestApiServer(QObject* parent)
     : QObject(parent)
     , m_server(nullptr)
     , m_running(false)
-    , m_port(8080)
-    , m_readTimeoutSec(5)
-    , m_writeTimeoutSec(5)
-    , m_startupTimeoutSec(5)
     , m_lastError(ErrorCode::None)
 {
+    // m_config is initialized with defaults from the struct
 }
 
 RestApiServer::~RestApiServer()
 {
     stop();
+}
+
+void RestApiServer::setConfig(const RestApiConfig& config)
+{
+    if (!m_running.load()) {
+        m_config = config;
+    }
 }
 
 bool RestApiServer::start(int port)
@@ -30,7 +35,11 @@ bool RestApiServer::start(int port)
         return false;
     }
 
-    m_port = port;
+    // Override port if specified
+    if (port != 8080) {
+        m_config.port = port;
+    }
+    
     m_lastError = ErrorCode::None;
 
     try {
@@ -38,8 +47,8 @@ bool RestApiServer::start(int port)
         m_server = std::unique_ptr<httplib::Server>(new httplib::Server());
 
         // Configure timeouts
-        m_server->set_read_timeout(m_readTimeoutSec, 0);
-        m_server->set_write_timeout(m_writeTimeoutSec, 0);
+        m_server->set_read_timeout(m_config.readTimeoutSec, 0);
+        m_server->set_write_timeout(m_config.writeTimeoutSec, 0);
 
         // Setup default routes
         setupDefaultRoutes();
@@ -57,7 +66,7 @@ bool RestApiServer::start(int port)
 
         // Wait for server to start with timeout
         try {
-            auto status = startupFuture.wait_for(std::chrono::seconds(m_startupTimeoutSec));
+            auto status = startupFuture.wait_for(std::chrono::seconds(m_config.startupTimeoutSec));
             
             if (status == std::future_status::ready) {
                 bool success = startupFuture.get();
@@ -172,44 +181,43 @@ void RestApiServer::serverThreadFunc()
         return;
     }
 
-    // Attempt to bind and listen
-    bool success = m_server->listen("127.0.0.1", m_port);
-
-    if (!success) {
+    // First, try to bind to the port
+    if (!m_server->bind_to_port(m_config.bindAddress.toStdString().c_str(), m_config.port)) {
         m_running = false;
         
         // Check if port is in use
         int savedErrno = errno;
         if (savedErrno == EADDRINUSE) {
             m_lastError = ErrorCode::PortInUse;
-            QString error = QString("Port %1 is already in use").arg(m_port);
-            emit errorOccurred(error);  // Thread-safe: Qt queued connection
+            QString error = QString("Port %1 is already in use").arg(m_config.port);
+            emit errorOccurred(error);
         } else {
             m_lastError = ErrorCode::BindFailed;
-            QString error = QString("Failed to bind to port %1: %2")
-                .arg(m_port)
+            QString error = QString("Failed to bind to %1:%2 - %3")
+                .arg(m_config.bindAddress)
+                .arg(m_config.port)
                 .arg(std::strerror(savedErrno));
-            emit errorOccurred(error);  // Thread-safe: Qt queued connection
+            emit errorOccurred(error);
         }
         
-        // Notify waiting thread of failure
         try {
             m_startupPromise.set_value(false);
         } catch (const std::future_error&) {
             // Promise already set, ignore
         }
-    } else {
-        // Server started successfully
-        try {
-            m_startupPromise.set_value(true);
-        } catch (const std::future_error&) {
-            // Promise already set, ignore
-        }
-        
-        // Server will block here until stop() is called
-        // listen() returns when server->stop() is called
+        return;
     }
-
+    
+    // Binding succeeded, notify that server is ready
+    try {
+        m_startupPromise.set_value(true);
+    } catch (const std::future_error&) {
+        // Promise already set, ignore
+    }
+    
+    // Now start listening (this will block until stop() is called)
+    m_server->listen_after_bind();
+    
     m_running = false;
 }
 
@@ -251,9 +259,9 @@ QString RestApiServer::errorCodeToString(ErrorCode code) const
         case ErrorCode::None:
             return "No error";
         case ErrorCode::PortInUse:
-            return QString("Port %1 is already in use").arg(m_port);
+            return QString("Port %1 is already in use").arg(m_config.port);
         case ErrorCode::BindFailed:
-            return QString("Failed to bind to port %1").arg(m_port);
+            return QString("Failed to bind to port %1").arg(m_config.port);
         case ErrorCode::ThreadStartFailed:
             return "Failed to start server thread";
         case ErrorCode::AlreadyRunning:

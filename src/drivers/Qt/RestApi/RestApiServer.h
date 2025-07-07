@@ -26,6 +26,14 @@ namespace httplib {
  * connecting to slots in different threads, ensuring thread-safe communication.
  * See Qt documentation on signal/slot connections across threads.
  */
+struct RestApiConfig {
+    QString bindAddress = "127.0.0.1";
+    int port = 8080;
+    int readTimeoutSec = 5;
+    int writeTimeoutSec = 5;
+    int startupTimeoutSec = 10;
+};
+
 class RestApiServer : public QObject
 {
     Q_OBJECT
@@ -50,10 +58,14 @@ public:
     bool isRunning() const;
 
     // Configuration
-    int getPort() const { return m_port; }
-    void setReadTimeout(int seconds) { m_readTimeoutSec = seconds; }
-    void setWriteTimeout(int seconds) { m_writeTimeoutSec = seconds; }
-    void setStartupTimeout(int seconds) { m_startupTimeoutSec = seconds; }
+    void setConfig(const RestApiConfig& config);
+    const RestApiConfig& getConfig() const { return m_config; }
+    
+    // Deprecated individual setters (kept for compatibility)
+    int getPort() const { return m_config.port; }
+    void setReadTimeout(int seconds) { m_config.readTimeoutSec = seconds; }
+    void setWriteTimeout(int seconds) { m_config.writeTimeoutSec = seconds; }
+    void setStartupTimeout(int seconds) { m_config.startupTimeoutSec = seconds; }
 
 signals:
     void serverStarted();
@@ -80,10 +92,7 @@ private:
     std::thread m_serverThread;
     std::atomic<bool> m_running;
     std::promise<bool> m_startupPromise;
-    int m_port;
-    int m_readTimeoutSec;
-    int m_writeTimeoutSec;
-    int m_startupTimeoutSec;
+    RestApiConfig m_config;
     ErrorCode m_lastError;
 };
 
