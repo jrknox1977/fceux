@@ -705,6 +705,13 @@ set(SRC_DRIVERS_SDL
   ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/TasEditor/markers.cpp
 )
 
+# REST API Support Files
+if ( ${REST_API} )
+  set(SRC_DRIVERS_SDL ${SRC_DRIVERS_SDL}
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/RestApiServer.cpp
+  )
+endif()
+
 set(SOURCES ${SRC_CORE} ${SRC_DRIVERS_COMMON} ${SRC_DRIVERS_SDL})
 
 # Put build timestamp into BUILD_TS environment variable and from there into
