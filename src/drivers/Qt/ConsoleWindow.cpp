@@ -392,6 +392,8 @@ consoleWin_t::~consoleWin_t(void)
 	// Stop REST API server
 	if (apiServer) {
 		apiServer->stop();
+		delete apiServer;
+		apiServer = nullptr;
 	}
 #endif
 
