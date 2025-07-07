@@ -36,6 +36,10 @@
 #include "Qt/GamePadConf.h"
 #include "Qt/AviRecord.h"
 
+#ifdef __FCEU_REST_API_ENABLE__
+class FceuxApiServer;
+#endif
+
 class  emulatorThread_t : public QThread
 {
 	Q_OBJECT
@@ -163,6 +167,9 @@ class  consoleWin_t : public QMainWindow
 
 		emulatorThread_t *emulatorThread;
 		AviRecordDiskThread_t *aviDiskThread;
+#ifdef __FCEU_REST_API_ENABLE__
+		FceuxApiServer *apiServer;
+#endif
 
 		void addRecentRom( const char *rom );
 

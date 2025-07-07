@@ -112,6 +112,10 @@
 #include "Qt/NetPlay.h"
 #include "Qt/TasEditor/TasEditorWindow.h"
 
+#ifdef __FCEU_REST_API_ENABLE__
+#include "Qt/RestApi/FceuxApiServer.h"
+#endif
+
 #ifdef __APPLE__
 void qt_set_sequence_auto_mnemonic(bool enable);
 #endif
@@ -306,6 +310,40 @@ consoleWin_t::consoleWin_t(QWidget *parent)
 		}
 	};
 	FCEU_SetCheatChangeEventCallback( cheatChangeCallback, this );
+
+#ifdef __FCEU_REST_API_ENABLE__
+	// Initialize REST API server
+	apiServer = new FceuxApiServer(this);
+	
+	// Load configuration from g_config
+	RestApiConfig apiConfig;
+	int port = 8080;
+	std::string bindAddr = "127.0.0.1";
+	
+	g_config->getOption("SDL.RestApiPort", &port);
+	g_config->getOption("SDL.RestApiBindAddress", &bindAddr);
+	
+	apiConfig.port = port;
+	apiConfig.bindAddress = QString::fromStdString(bindAddr);
+	apiServer->setConfig(apiConfig);
+	
+	// Connect error signal
+	connect(apiServer, &RestApiServer::errorOccurred, this, [this](const QString& error) {
+		FCEU_DispMessage("REST API Error: %s", 1, error.toStdString().c_str());
+	});
+	
+	// Connect success signal
+	connect(apiServer, &RestApiServer::serverStarted, this, [this]() {
+		FCEU_DispMessage("REST API server successfully started", 0);
+	});
+	
+	// Start the server
+	if (apiServer->start()) {
+		FCEU_DispMessage("REST API server started on port %d", 0, apiConfig.port);
+	} else {
+		FCEU_DispMessage("Failed to start REST API server", 1);
+	}
+#endif
 }
 
 consoleWin_t::~consoleWin_t(void)
@@ -351,6 +389,13 @@ consoleWin_t::~consoleWin_t(void)
 #endif
 
 	NetPlayCloseSession();
+
+#ifdef __FCEU_REST_API_ENABLE__
+	// Stop REST API server
+	if (apiServer) {
+		apiServer->stop();
+	}
+#endif
 
 	// The closeApp function call stops all threads.
 	// Calling quit on threads should not happen here. 

@@ -709,6 +709,7 @@ set(SRC_DRIVERS_SDL
 if ( ${REST_API} )
   set(SRC_DRIVERS_SDL ${SRC_DRIVERS_SDL}
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/RestApiServer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/FceuxApiServer.cpp
   )
 endif()
 
