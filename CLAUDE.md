@@ -68,10 +68,11 @@ FCEUX uses a multi-threaded architecture:
 - **Memory Access**: `FCEU_CheatGetByte()/FCEU_CheatSetByte()` - Safe memory R/W
 - **Input Injection**: `FCEUD_UpdateInput()` in `input.cpp` - Controller state update
 
-### REST API Research (In Progress)
-- Research documentation in `docs/architecture/`
-- Proof-of-concepts in `poc/`
-- Key findings in `docs/FCEUX_REST_API_RESEARCH_REPORT.md`
+### REST API Implementation
+- **Server Class**: `src/drivers/Qt/RestApi/RestApiServer` - Qt-integrated HTTP server
+- **Build Option**: Enable with `-DREST_API=ON` during CMake configuration
+- **Documentation**: See `src/drivers/Qt/RestApi/README.md` for usage and architecture
+- **Research**: Historical research in `docs/FCEUX_REST_API_RESEARCH_REPORT.md`
 
 ## Development Patterns
 
