@@ -7,6 +7,7 @@
 #include "CommandQueue.h"
 #include "CommandExecution.h"
 #include "Commands/MemoryReadCommand.h"
+#include "Commands/InputCommands.h"
 #include "Utils/AddressParser.h"
 #include <QDateTime>
 #include <QtGlobal>
@@ -100,6 +101,140 @@ void FceuxApiServer::registerRoutes()
             }
         });
     
+    // Input control endpoints
+    addGetRoute("/api/input/status",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto cmd = std::unique_ptr<ApiCommandWithResult<InputStatusResult>>(new InputStatusCommand());
+                auto future = executeCommand(std::move(cmd), 1000);
+                InputStatusResult result = waitForResult(future, 1000);
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+            } catch (const std::runtime_error& e) {
+                handleInputError(e, res);
+            }
+        });
+    
+    addPostRoute("/api/input/port/([12])/press",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Parse port number
+                int port = std::stoi(req.matches[1]);
+                
+                // Parse JSON body
+                json body = json::parse(req.body);
+                
+                // Extract buttons array
+                if (!body.contains("buttons") || !body["buttons"].is_array()) {
+                    throw std::runtime_error("Missing or invalid 'buttons' array");
+                }
+                
+                std::vector<std::string> buttons;
+                for (const auto& btn : body["buttons"]) {
+                    if (!btn.is_string()) {
+                        throw std::runtime_error("Button names must be strings");
+                    }
+                    buttons.push_back(btn.get<std::string>());
+                }
+                
+                // Get optional duration
+                int duration = body.value("duration_ms", 16);
+                
+                // Create and execute command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<InputPressResult>>(
+                    new InputPressCommand(port, buttons, duration));
+                auto future = executeCommand(std::move(cmd), 1000);
+                InputPressResult result = waitForResult(future, 1000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                handleInputError(e, res);
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    addPostRoute("/api/input/port/([12])/release",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Parse port number
+                int port = std::stoi(req.matches[1]);
+                
+                // Parse JSON body
+                std::vector<std::string> buttons;
+                if (!req.body.empty()) {
+                    json body = json::parse(req.body);
+                    if (body.contains("buttons") && body["buttons"].is_array()) {
+                        for (const auto& btn : body["buttons"]) {
+                            if (!btn.is_string()) {
+                                throw std::runtime_error("Button names must be strings");
+                            }
+                            buttons.push_back(btn.get<std::string>());
+                        }
+                    }
+                }
+                
+                // Create and execute command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<InputReleaseResult>>(
+                    new InputReleaseCommand(port, buttons));
+                auto future = executeCommand(std::move(cmd), 1000);
+                InputReleaseResult result = waitForResult(future, 1000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                handleInputError(e, res);
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    addPostRoute("/api/input/port/([12])/state",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Parse port number
+                int port = std::stoi(req.matches[1]);
+                
+                // Parse JSON body
+                json body = json::parse(req.body);
+                
+                // Convert JSON to state map
+                std::unordered_map<std::string, bool> state;
+                for (auto it = body.begin(); it != body.end(); ++it) {
+                    if (!it.value().is_boolean()) {
+                        throw std::runtime_error("Button states must be boolean values");
+                    }
+                    state[it.key()] = it.value().get<bool>();
+                }
+                
+                // Create and execute command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<InputStateResult>>(
+                    new InputStateCommand(port, state));
+                auto future = executeCommand(std::move(cmd), 1000);
+                InputStateResult result = waitForResult(future, 1000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                handleInputError(e, res);
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
     // TODO: Add input validation framework for future POST/PUT endpoints
 }
 
@@ -157,13 +292,18 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         "/api/emulation/resume",
         "/api/emulation/status",
         "/api/rom/info",
-        "/api/memory/{address}"
+        "/api/memory/{address}",
+        "/api/input/status",
+        "/api/input/port/{port}/press",
+        "/api/input/port/{port}/release",
+        "/api/input/port/{port}/state"
     });
     
     // Feature flags
     response["features"] = {
         {"emulation_control", true},
         {"memory_access", true},
+        {"input_control", true},
         {"save_states", false},
         {"screenshots", false}
     };
@@ -175,4 +315,26 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
 QString FceuxApiServer::getCurrentTimestamp() const
 {
     return QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+}
+
+void FceuxApiServer::handleInputError(const std::runtime_error& e, httplib::Response& res)
+{
+    std::string errorMsg = e.what();
+    json error;
+    error["error"] = errorMsg;
+    
+    // Map error messages to appropriate HTTP status codes
+    if (errorMsg.find("Invalid button name") != std::string::npos ||
+        errorMsg.find("Invalid port number") != std::string::npos ||
+        errorMsg.find("Missing or invalid") != std::string::npos) {
+        res.status = 400;  // Bad Request
+    } else if (errorMsg == "No game loaded") {
+        res.status = 503;  // Service Unavailable
+    } else if (errorMsg == "Command execution timeout") {
+        res.status = 504;  // Gateway Timeout
+    } else {
+        res.status = 500;  // Internal Server Error
+    }
+    
+    res.set_content(error.dump(), "application/json");
 }

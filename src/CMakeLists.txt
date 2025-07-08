@@ -715,6 +715,7 @@ if ( ${REST_API} )
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/RomInfoController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Utils/AddressParser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/MemoryReadCommand.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/InputCommands.cpp
   )
 endif()
 
