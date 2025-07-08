@@ -1,0 +1,1122 @@
+openapi: 3.0.3
+info:
+  title: FCEUX REST API
+  description: |
+    REST API for the FCEUX NES emulator, providing programmatic control over emulation, memory access, input simulation, and media operations.
+    
+    ## Features
+    - Thread-safe emulation control (pause/resume)
+    - Safe memory read/write operations with validation
+    - NES controller input simulation
+    - Screenshot capture and save state management
+    - Real-time emulation status monitoring
+    
+    ## Authentication
+    No authentication required. Server binds to localhost (127.0.0.1) only for security.
+    
+    ## Rate Limiting
+    Commands are processed at a maximum rate of 10 per frame (~167/second at 60 FPS) to maintain emulation performance.
+  version: 1.0.0
+  contact:
+    name: FCEUX Project
+    url: https://github.com/TASEmulators/fceux
+  license:
+    name: GNU General Public License v2.0
+    url: https://www.gnu.org/licenses/gpl-2.0.html
+
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local FCEUX instance (default)
+
+paths:
+  # System Endpoints
+  /api/system/info:
+    get:
+      tags: [System]
+      summary: Get FCEUX version and system information
+      description: Returns FCEUX version, build information, Qt version, and platform details
+      responses:
+        '200':
+          description: System information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfo'
+              example:
+                version: "2.6.6"
+                build_date: "Jul  8 2025"
+                qt_version: "5.15.3"
+                api_version: "1.0.0"
+                platform: "linux"
+
+  /api/system/ping:
+    get:
+      tags: [System]
+      summary: Health check endpoint
+      description: Simple health check for monitoring server availability
+      responses:
+        '200':
+          description: Server is healthy and responsive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+              example:
+                status: "ok"
+                timestamp: "2025-07-08T10:30:45Z"
+
+  /api/system/capabilities:
+    get:
+      tags: [System]
+      summary: List available API endpoints and features
+      description: Returns all available endpoints and feature flags for capability detection
+      responses:
+        '200':
+          description: Capabilities retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesResponse'
+
+  # Emulation Control Endpoints
+  /api/emulation/pause:
+    post:
+      tags: [Emulation]
+      summary: Pause NES emulation
+      description: Pauses the currently running emulation. Requires a ROM to be loaded.
+      responses:
+        '200':
+          description: Emulation paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmulationControlResponse'
+              example:
+                success: true
+                state: "paused"
+        '400':
+          $ref: '#/components/responses/NoRomLoaded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/emulation/resume:
+    post:
+      tags: [Emulation]
+      summary: Resume NES emulation
+      description: Resumes paused emulation. Requires a ROM to be loaded.
+      responses:
+        '200':
+          description: Emulation resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmulationControlResponse'
+              example:
+                success: true
+                state: "resumed"
+        '400':
+          $ref: '#/components/responses/NoRomLoaded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/emulation/status:
+    get:
+      tags: [Emulation]
+      summary: Get current emulation status
+      description: Returns detailed emulation state including running status, FPS, and frame count
+      responses:
+        '200':
+          description: Emulation status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmulationStatus'
+              examples:
+                with_rom:
+                  summary: With ROM loaded
+                  value:
+                    running: true
+                    paused: false
+                    rom_loaded: true
+                    fps: 60.098814
+                    frame_count: 3245
+                no_rom:
+                  summary: No ROM loaded
+                  value:
+                    running: false
+                    paused: false
+                    rom_loaded: false
+                    fps: 0.0
+                    frame_count: 0
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ROM Information
+  /api/rom/info:
+    get:
+      tags: [ROM]
+      summary: Get ROM information
+      description: Returns detailed information about the currently loaded ROM file
+      responses:
+        '200':
+          description: ROM information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RomInfo'
+              examples:
+                loaded:
+                  summary: ROM loaded
+                  value:
+                    loaded: true
+                    filename: "Super Mario Bros.nes"
+                    name: "SUPER MARIO BROS."
+                    size: 40976
+                    mapper: 0
+                    mirroring: "horizontal"
+                    has_battery: false
+                    md5: "811b027eaf99c2def7b933c5208636de"
+                not_loaded:
+                  summary: No ROM loaded
+                  value:
+                    loaded: false
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # Memory Access Endpoints
+  /api/memory/{address}:
+    get:
+      tags: [Memory]
+      summary: Read single byte from memory
+      description: Read a single byte from NES memory using safe access methods
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/MemoryAddress'
+          example: "0x0000"
+      responses:
+        '200':
+          description: Memory read successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryReadResult'
+              example:
+                address: "0x0000"
+                value: 255
+                hex: "0xFF"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /api/memory/range/{start}/{length}:
+    get:
+      tags: [Memory]
+      summary: Read memory range
+      description: Read multiple bytes from NES memory efficiently (up to 4096 bytes)
+      parameters:
+        - name: start
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/MemoryAddress'
+          example: "0x0000"
+        - name: length
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4096
+          example: 256
+      responses:
+        '200':
+          description: Memory range read successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryRangeResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /api/memory/range/{start}:
+    post:
+      tags: [Memory]
+      summary: Write memory range
+      description: Write multiple bytes to NES memory with safety validation
+      parameters:
+        - name: start
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/MemoryAddress'
+          example: "0x0000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryWriteRequest'
+      responses:
+        '200':
+          description: Memory write successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryWriteResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /api/memory/batch:
+    post:
+      tags: [Memory]
+      summary: Execute batch memory operations
+      description: Execute multiple memory read/write operations atomically
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemoryBatchRequest'
+      responses:
+        '200':
+          description: Batch operations completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryBatchResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # Input Control Endpoints
+  /api/input/status:
+    get:
+      tags: [Input]
+      summary: Get controller input status
+      description: Get current state of all NES controller buttons for both ports
+      responses:
+        '200':
+          description: Input status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputStatus'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/input/port/{port}/press:
+    post:
+      tags: [Input]
+      summary: Press controller buttons
+      description: Press specific buttons with optional hold duration
+      parameters:
+        - name: port
+          in: path
+          required: true
+          schema:
+            type: integer
+            enum: [1, 2]
+          example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputPressRequest'
+      responses:
+        '200':
+          description: Buttons pressed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputPressResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /api/input/port/{port}/release:
+    post:
+      tags: [Input]
+      summary: Release controller buttons
+      description: Release specific buttons or all buttons
+      parameters:
+        - name: port
+          in: path
+          required: true
+          schema:
+            type: integer
+            enum: [1, 2]
+          example: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputReleaseRequest'
+      responses:
+        '200':
+          description: Buttons released successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputReleaseResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /api/input/port/{port}/state:
+    post:
+      tags: [Input]
+      summary: Set complete controller state
+      description: Set the complete state of all controller buttons atomically
+      parameters:
+        - name: port
+          in: path
+          required: true
+          schema:
+            type: integer
+            enum: [1, 2]
+          example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InputStateRequest'
+      responses:
+        '200':
+          description: Controller state set successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InputStateResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # Media Operations
+  /api/screenshot:
+    post:
+      tags: [Media]
+      summary: Capture screenshot
+      description: Capture a screenshot of current emulator display
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScreenshotRequest'
+      responses:
+        '200':
+          description: Screenshot captured successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScreenshotResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/screenshot/last:
+    get:
+      tags: [Media]
+      summary: Get last screenshot info
+      description: Get information about the most recently captured screenshot
+      responses:
+        '200':
+          description: Last screenshot info retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScreenshotResult'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/savestate:
+    post:
+      tags: [Media]
+      summary: Save emulation state
+      description: Save current emulation state to memory or file
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveStateRequest'
+      responses:
+        '200':
+          description: Save state created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveStateResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/loadstate:
+    post:
+      tags: [Media]
+      summary: Load emulation state
+      description: Load a previously saved emulation state
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadStateRequest'
+      responses:
+        '200':
+          description: Save state loaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveStateResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/savestate/list:
+    get:
+      tags: [Media]
+      summary: List save states
+      description: List all available save states for the current ROM
+      responses:
+        '200':
+          description: Save state list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaveStateListResult'
+        '503':
+          $ref: '#/components/responses/NoGameLoaded'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    # System Schemas
+    SystemInfo:
+      type: object
+      properties:
+        version:
+          type: string
+          description: FCEUX version string
+          example: "2.6.6"
+        build_date:
+          type: string
+          description: Compilation date
+          example: "Jul  8 2025"
+        qt_version:
+          type: string
+          description: Qt framework version
+          example: "5.15.3"
+        api_version:
+          type: string
+          description: REST API version
+          example: "1.0.0"
+        platform:
+          type: string
+          enum: [linux, windows, macos, unknown]
+          description: Operating system platform
+
+    PingResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          description: Always "ok" when server is responsive
+        timestamp:
+          type: string
+          format: date-time
+          description: Current UTC time in ISO 8601 format
+
+    CapabilitiesResponse:
+      type: object
+      properties:
+        endpoints:
+          type: array
+          items:
+            type: string
+          description: List of all available endpoint paths
+        features:
+          type: object
+          properties:
+            emulation_control:
+              type: boolean
+            memory_access:
+              type: boolean
+            memory_range_access:
+              type: boolean
+            input_control:
+              type: boolean
+            save_states:
+              type: boolean
+            screenshots:
+              type: boolean
+
+    # Emulation Schemas
+    EmulationControlResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Always true for successful operations
+        state:
+          type: string
+          enum: [paused, resumed]
+          description: New emulation state
+
+    EmulationStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+          description: true if ROM loaded and not paused
+        paused:
+          type: boolean
+          description: true if emulation is currently paused
+        rom_loaded:
+          type: boolean
+          description: true if a ROM file is loaded
+        fps:
+          type: number
+          format: double
+          description: Target framerate (60.098814 for NTSC, 50.0 for PAL)
+        frame_count:
+          type: integer
+          description: Total frames executed since ROM load
+
+    # ROM Schemas
+    RomInfo:
+      type: object
+      properties:
+        loaded:
+          type: boolean
+          description: true if ROM is currently loaded
+        filename:
+          type: string
+          description: Original ROM filename
+        name:
+          type: string
+          description: Internal ROM name from header
+        size:
+          type: integer
+          description: Total ROM size in bytes
+        mapper:
+          type: integer
+          minimum: 0
+          maximum: 255
+          description: NES mapper number
+        mirroring:
+          type: string
+          enum: [horizontal, vertical, 4screen, none, unknown]
+          description: Screen mirroring type
+        has_battery:
+          type: boolean
+          description: true if cartridge has battery-backed save RAM
+        md5:
+          type: string
+          pattern: '^[a-f0-9]{32}$'
+          description: MD5 hash of ROM data
+
+    # Memory Schemas
+    MemoryAddress:
+      oneOf:
+        - type: string
+          pattern: '^0x[0-9a-fA-F]{1,4}$'
+          example: "0x0000"
+        - type: integer
+          minimum: 0
+          maximum: 65535
+          example: 1024
+      description: Memory address in hex (0x0000-0xFFFF) or decimal (0-65535)
+
+    MemoryReadResult:
+      type: object
+      properties:
+        address:
+          type: string
+          description: Address in hex format with 0x prefix
+        value:
+          type: integer
+          minimum: 0
+          maximum: 255
+          description: Byte value as decimal number
+        hex:
+          type: string
+          description: Byte value as hex string with 0x prefix
+
+    MemoryRangeResult:
+      type: object
+      properties:
+        start:
+          type: string
+          description: Starting address in hex format
+        length:
+          type: integer
+          description: Number of bytes read
+        data:
+          type: string
+          format: base64
+          description: Base64-encoded memory data
+        hex:
+          type: string
+          description: First 64 bytes as hex string (for preview)
+        checksum:
+          type: string
+          description: XOR checksum of all bytes as hex value
+
+    MemoryWriteRequest:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: string
+          format: base64
+          description: Base64-encoded data to write
+
+    MemoryWriteResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Always true for successful writes
+        start:
+          type: string
+          description: Starting address in hex format
+        bytes_written:
+          type: integer
+          description: Number of bytes actually written
+
+    MemoryBatchRequest:
+      type: object
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          maxItems: 100
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/MemoryBatchReadOp'
+              - $ref: '#/components/schemas/MemoryBatchWriteOp'
+
+    MemoryBatchReadOp:
+      type: object
+      required: [type, address, length]
+      properties:
+        type:
+          type: string
+          enum: [read]
+        address:
+          $ref: '#/components/schemas/MemoryAddress'
+        length:
+          type: integer
+          minimum: 1
+          maximum: 4096
+
+    MemoryBatchWriteOp:
+      type: object
+      required: [type, address, data]
+      properties:
+        type:
+          type: string
+          enum: [write]
+        address:
+          $ref: '#/components/schemas/MemoryAddress'
+        data:
+          type: string
+          format: base64
+
+    MemoryBatchResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryBatchOpResult'
+
+    MemoryBatchOpResult:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [read, write]
+        success:
+          type: boolean
+        address:
+          type: string
+        data:
+          type: string
+          format: base64
+          description: Base64 data (read operations only)
+        bytes_written:
+          type: integer
+          description: Bytes written (write operations only)
+        error:
+          type: string
+          description: Error message if operation failed
+
+    # Input Schemas
+    NESButton:
+      type: string
+      enum: [A, B, SELECT, START, UP, DOWN, LEFT, RIGHT]
+
+    InputStatus:
+      type: object
+      properties:
+        port1:
+          $ref: '#/components/schemas/ControllerState'
+        port2:
+          $ref: '#/components/schemas/ControllerState'
+
+    ControllerState:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          description: Always true for NES controllers
+        buttons:
+          type: object
+          properties:
+            A:
+              type: boolean
+            B:
+              type: boolean
+            SELECT:
+              type: boolean
+            START:
+              type: boolean
+            UP:
+              type: boolean
+            DOWN:
+              type: boolean
+            LEFT:
+              type: boolean
+            RIGHT:
+              type: boolean
+
+    InputPressRequest:
+      type: object
+      required: [buttons]
+      properties:
+        buttons:
+          type: array
+          items:
+            $ref: '#/components/schemas/NESButton'
+          description: Array of button names to press
+        duration_ms:
+          type: integer
+          minimum: 16
+          default: 16
+          description: Hold duration in milliseconds
+
+    InputPressResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        port:
+          type: integer
+        buttons_pressed:
+          type: array
+          items:
+            $ref: '#/components/schemas/NESButton'
+        duration_ms:
+          type: integer
+
+    InputReleaseRequest:
+      type: object
+      properties:
+        buttons:
+          type: array
+          items:
+            $ref: '#/components/schemas/NESButton'
+          description: Array of button names to release (optional)
+
+    InputReleaseResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        port:
+          type: integer
+        buttons_released:
+          type: array
+          items:
+            $ref: '#/components/schemas/NESButton'
+
+    InputStateRequest:
+      type: object
+      properties:
+        A:
+          type: boolean
+        B:
+          type: boolean
+        SELECT:
+          type: boolean
+        START:
+          type: boolean
+        UP:
+          type: boolean
+        DOWN:
+          type: boolean
+        LEFT:
+          type: boolean
+        RIGHT:
+          type: boolean
+
+    InputStateResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        port:
+          type: integer
+        state:
+          type: integer
+          description: Final button state as 8-bit value
+
+    # Media Schemas
+    ScreenshotRequest:
+      type: object
+      properties:
+        format:
+          type: string
+          enum: [png, jpg, bmp]
+          default: png
+          description: Image format
+        encoding:
+          type: string
+          enum: [file, base64]
+          default: file
+          description: Output encoding mode
+        path:
+          type: string
+          description: Custom file path (file encoding only)
+
+    ScreenshotResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        format:
+          type: string
+          enum: [png, jpg, bmp]
+        encoding:
+          type: string
+          enum: [file, base64]
+        filename:
+          type: string
+          description: Generated filename (file encoding only)
+        path:
+          type: string
+          description: Full file path (file encoding only)
+        data:
+          type: string
+          format: base64
+          description: Base64-encoded image data (base64 encoding only)
+        error:
+          type: string
+          description: Error message if failed
+
+    SaveStateRequest:
+      type: object
+      properties:
+        slot:
+          type: integer
+          minimum: -1
+          maximum: 9
+          default: 0
+          description: Save slot (-1 for memory, 0-9 for file slots)
+        path:
+          type: string
+          description: Custom file path (overrides slot-based naming)
+
+    LoadStateRequest:
+      type: object
+      properties:
+        slot:
+          type: integer
+          minimum: -1
+          maximum: 9
+          default: 0
+          description: Save slot to load from
+        path:
+          type: string
+          description: Custom file path to load from
+        data:
+          type: string
+          format: base64
+          description: Base64-encoded save state data
+
+    SaveStateResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        slot:
+          type: integer
+          description: Slot number used (if applicable)
+        filename:
+          type: string
+          description: Filename used or loaded
+        timestamp:
+          type: string
+          format: date-time
+          description: Save timestamp in ISO 8601 format
+        error:
+          type: string
+          description: Error message if failed
+
+    SaveStateListResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaveStateInfo'
+        memory:
+          $ref: '#/components/schemas/MemorySaveInfo'
+        error:
+          type: string
+
+    SaveStateInfo:
+      type: object
+      properties:
+        slot:
+          type: integer
+          minimum: 0
+          maximum: 9
+        filename:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        size:
+          type: integer
+          description: File size in bytes
+        exists:
+          type: boolean
+
+    MemorySaveInfo:
+      type: object
+      properties:
+        exists:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+
+    # Error Schemas
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Descriptive error message
+      example:
+        error: "No game loaded"
+
+  responses:
+    BadRequest:
+      description: Bad Request - Invalid parameters or malformed request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_address:
+              summary: Invalid address format
+              value:
+                error: "Invalid hex format"
+            invalid_json:
+              summary: Malformed JSON
+              value:
+                error: "Invalid JSON: Missing or invalid 'data' field"
+
+    NoGameLoaded:
+      description: Service Unavailable - No game loaded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "No game loaded"
+
+    NoRomLoaded:
+      description: Bad Request - No ROM loaded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "No ROM loaded"
+
+    Timeout:
+      description: Gateway Timeout - Command execution timeout
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Command execution timeout"
+
+    InternalError:
+      description: Internal Server Error - Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Internal server error"
+
+tags:
+  - name: System
+    description: System information and health checks
+  - name: Emulation
+    description: Emulation control (pause/resume/status)
+  - name: ROM
+    description: ROM information and metadata
+  - name: Memory
+    description: NES memory read/write operations
+  - name: Input
+    description: NES controller input simulation
+  - name: Media
+    description: Screenshots and save state management
