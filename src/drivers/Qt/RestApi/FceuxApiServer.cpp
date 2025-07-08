@@ -2,6 +2,7 @@
 #include "../../../lib/httplib.h"
 #include "../../../lib/json.hpp"
 #include "../../../version.h"
+#include "EmulationController.h"
 #include <QDateTime>
 #include <QtGlobal>
 
@@ -29,6 +30,11 @@ void FceuxApiServer::registerRoutes()
         [this](const httplib::Request& req, httplib::Response& res) {
             handleSystemCapabilities(req, res);
         });
+    
+    // Emulation control endpoints
+    addPostRoute("/api/emulation/pause", EmulationController::handlePause);
+    addPostRoute("/api/emulation/resume", EmulationController::handleResume);
+    addGetRoute("/api/emulation/status", EmulationController::handleStatus);
     
     // TODO: Add input validation framework for future POST/PUT endpoints
 }
@@ -82,12 +88,15 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
     response["endpoints"] = json::array({
         "/api/system/info",
         "/api/system/ping",
-        "/api/system/capabilities"
+        "/api/system/capabilities",
+        "/api/emulation/pause",
+        "/api/emulation/resume",
+        "/api/emulation/status"
     });
     
-    // Feature flags - all false for now as emulation features not yet implemented
+    // Feature flags
     response["features"] = {
-        {"emulation_control", false},
+        {"emulation_control", true},
         {"memory_access", false},
         {"save_states", false},
         {"screenshots", false}

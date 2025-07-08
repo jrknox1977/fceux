@@ -711,6 +711,7 @@ if ( ${REST_API} )
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/RestApiServer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/FceuxApiServer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/CommandQueue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/EmulationController.cpp
   )
 endif()
 

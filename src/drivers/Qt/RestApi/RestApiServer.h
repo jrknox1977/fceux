@@ -10,6 +10,7 @@
 #include <string>
 #include <future>
 #include <mutex>
+#include <map>
 
 // Forward declaration to avoid including httplib.h in header
 namespace httplib {
@@ -94,6 +95,13 @@ private:
     std::promise<bool> m_startupPromise;
     RestApiConfig m_config;
     ErrorCode m_lastError;
+    
+    // WORKAROUND: Manual POST handler storage due to httplib v0.22.0 issue
+    // httplib rejects POST requests with 400 status in Qt environment before
+    // route matching. We store handlers here for manual routing in pre_routing_handler.
+    // See docs/REST_API_POST_ROUTE_FIX.md for full details.
+    // TODO: Remove this workaround when httplib issue is resolved
+    std::map<std::string, std::function<void(const httplib::Request&, httplib::Response&)>> m_postHandlers;
 };
 
 #endif // __REST_API_SERVER_H__

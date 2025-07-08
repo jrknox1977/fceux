@@ -81,6 +81,7 @@
 
 #ifdef __FCEU_REST_API_ENABLE__
 #include "Qt/RestApi/CommandQueue.h"
+#include "Qt/RestApi/CommandQueue_fwd.h"
 #include "Qt/RestApi/RestApiCommands.h"
 #endif
 //*****************************************************************

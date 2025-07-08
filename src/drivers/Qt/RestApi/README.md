@@ -175,6 +175,17 @@ if (future.wait_for(std::chrono::seconds(2)) == std::future_status::ready) {
 - `ApiCommandWithResult<T>`: For commands that return values
 - `ApiCommandVoid`: Convenience class for void commands
 
+## Known Issues
+
+### POST Route Workaround
+There is a known issue with httplib v0.22.0 where POST routes return 400 errors in the Qt/FCEUX environment. A workaround has been implemented that manually routes POST requests in the pre-routing handler. See `docs/REST_API_POST_ROUTE_FIX.md` for technical details.
+
+This workaround:
+- Only affects POST request routing (GET/PUT/DELETE work normally)
+- Has minimal performance impact
+- Is transparent to API users
+- Will be removed once the underlying issue is resolved
+
 ## Future Enhancements
 
 - WebSocket support for real-time updates

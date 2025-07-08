@@ -142,6 +142,10 @@ void RestApiServer::addGetRoute(const std::string& pattern,
 {
     if (m_server) {
         m_server->Get(pattern, handler);
+        // Debug output
+        printf("REST API: Registered GET route: %s\n", pattern.c_str());
+    } else {
+        printf("REST API: ERROR - Cannot register GET route %s - server is null\n", pattern.c_str());
     }
 }
 
@@ -149,7 +153,17 @@ void RestApiServer::addPostRoute(const std::string& pattern,
     std::function<void(const httplib::Request&, httplib::Response&)> handler)
 {
     if (m_server) {
+        // WORKAROUND: Store POST handlers in our map for manual routing
+        // This bypasses httplib's POST routing which fails in Qt environment
+        m_postHandlers[pattern] = handler;
+        
+        // Still register with httplib for future compatibility when issue is fixed
         m_server->Post(pattern, handler);
+        
+        // Debug output
+        printf("REST API: Registered POST route: %s\n", pattern.c_str());
+    } else {
+        printf("REST API: ERROR - Cannot register POST route %s - server is null\n", pattern.c_str());
     }
 }
 
@@ -229,13 +243,41 @@ void RestApiServer::setupDefaultRoutes()
 
     // Error handler for 404
     m_server->set_error_handler([](const httplib::Request& req, httplib::Response& res) {
-        const char* fmt = R"({"error": "Not Found", "path": "%s", "method": "%s"})";
+        printf("REST API: Error handler called for %s %s (status: %d)\n", 
+               req.method.c_str(), req.path.c_str(), res.status);
+        
+        // Only set 404 if status is not already set
+        if (res.status == -1 || res.status == 0) {
+            res.status = 404;
+        }
+        
+        const char* fmt = R"({"error": "Not Found", "path": "%s", "method": "%s", "status": %d})";
         char buf[512];
-        snprintf(buf, sizeof(buf), fmt, req.path.c_str(), req.method.c_str());
-        res.status = 404;
+        snprintf(buf, sizeof(buf), fmt, req.path.c_str(), req.method.c_str(), res.status);
         res.set_content(buf, "application/json");
     });
 
+    // WORKAROUND for httplib v0.22.0 POST route issue:
+    // In the FCEUX/Qt environment, httplib rejects POST requests with 400 status
+    // before route matching. We intercept POST requests here and route manually.
+    // See docs/REST_API_POST_ROUTE_FIX.md for details.
+    m_postHandlers.clear();
+    
+    // Pre-routing handler for request inspection and POST workaround
+    m_server->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        // WORKAROUND: Manually handle POST requests due to httplib issue
+        if (req.method == "POST") {
+            // Check our stored POST handlers
+            auto it = m_postHandlers.find(req.path);
+            if (it != m_postHandlers.end()) {
+                it->second(req, res);
+                return httplib::Server::HandlerResponse::Handled;
+            }
+        }
+        
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+    
     // Exception handler
     m_server->set_exception_handler([](const httplib::Request& req, httplib::Response& res, std::exception_ptr ep) {
         try {
@@ -251,6 +293,10 @@ void RestApiServer::setupDefaultRoutes()
             res.set_content(R"({"error": "Internal Server Error"})", "application/json");
         }
     });
+    
+    // CRITICAL FIX: Set payload max length to allow POST requests
+    // httplib by default might reject POST requests without proper content length
+    m_server->set_payload_max_length(1024 * 1024); // 1MB max
 }
 
 QString RestApiServer::errorCodeToString(ErrorCode code) const
