@@ -8,6 +8,8 @@
 #include "CommandExecution.h"
 #include "Commands/MemoryReadCommand.h"
 #include "Commands/InputCommands.h"
+#include "Commands/ScreenshotCommands.h"
+#include "Commands/SaveStateCommands.h"
 #include "InputApi.h"
 #include "Utils/AddressParser.h"
 #include <QDateTime>
@@ -238,6 +240,180 @@ void FceuxApiServer::registerRoutes()
             }
         });
     
+    // Screenshot endpoints
+    addPostRoute("/api/screenshot",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Default values
+                std::string format = "png";
+                std::string encoding = "file";
+                std::string path = "";
+                
+                // Parse optional JSON body
+                if (!req.body.empty()) {
+                    json body = json::parse(req.body);
+                    format = body.value("format", "png");
+                    encoding = body.value("encoding", "file");
+                    path = body.value("path", "");
+                    
+                    // Debug
+                    printf("FceuxApiServer: screenshot request - format=%s, encoding=%s, path=%s\n", 
+                           format.c_str(), encoding.c_str(), path.c_str());
+                }
+                
+                // Create and execute command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<ScreenshotResult>>(
+                    new ScreenshotCommand(format, encoding, path));
+                auto future = executeCommand(std::move(cmd), 2000); // 2 second timeout for screenshots
+                ScreenshotResult result = waitForResult(future, 2000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    addGetRoute("/api/screenshot/last",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto cmd = std::unique_ptr<ApiCommandWithResult<ScreenshotResult>>(
+                    new LastScreenshotCommand());
+                auto future = executeCommand(std::move(cmd), 1000);
+                ScreenshotResult result = waitForResult(future, 1000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    // Save state endpoints
+    addPostRoute("/api/savestate",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Default values
+                int slot = 0;
+                std::string path = "";
+                
+                // Parse optional JSON body
+                if (!req.body.empty()) {
+                    json body = json::parse(req.body);
+                    slot = body.value("slot", 0);
+                    path = body.value("path", "");
+                    
+                    // Validate slot
+                    if (slot < -1 || slot > 9) {
+                        res.status = 400;
+                        json error;
+                        error["error"] = "Invalid slot number. Must be -1 (memory) or 0-9";
+                        res.set_content(error.dump(), "application/json");
+                        return;
+                    }
+                }
+                
+                // Create and execute command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<SaveStateResult>>(
+                    new SaveStateCommand(slot, path));
+                auto future = executeCommand(std::move(cmd), 2000);
+                SaveStateResult result = waitForResult(future, 2000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    addPostRoute("/api/loadstate",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Default values
+                int slot = 0;
+                std::string path = "";
+                std::string data = "";
+                
+                // Parse optional JSON body
+                if (!req.body.empty()) {
+                    json body = json::parse(req.body);
+                    slot = body.value("slot", 0);
+                    path = body.value("path", "");
+                    data = body.value("data", "");
+                    
+                    // Validate slot
+                    if (slot < -1 || slot > 9) {
+                        res.status = 400;
+                        json error;
+                        error["error"] = "Invalid slot number. Must be -1 (memory) or 0-9";
+                        res.set_content(error.dump(), "application/json");
+                        return;
+                    }
+                }
+                
+                // Create and execute command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<SaveStateResult>>(
+                    new LoadStateCommand(slot, path, data));
+                auto future = executeCommand(std::move(cmd), 2000);
+                SaveStateResult result = waitForResult(future, 2000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    addGetRoute("/api/savestate/list",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto cmd = std::unique_ptr<ApiCommandWithResult<SaveStateListResult>>(
+                    new ListSaveStatesCommand());
+                auto future = executeCommand(std::move(cmd), 1000);
+                SaveStateListResult result = waitForResult(future, 1000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
     // TODO: Add input validation framework for future POST/PUT endpoints
 }
 
@@ -299,7 +475,12 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         "/api/input/status",
         "/api/input/port/{port}/press",
         "/api/input/port/{port}/release",
-        "/api/input/port/{port}/state"
+        "/api/input/port/{port}/state",
+        "/api/screenshot",
+        "/api/screenshot/last",
+        "/api/savestate",
+        "/api/loadstate",
+        "/api/savestate/list"
     });
     
     // Feature flags
@@ -307,8 +488,8 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         {"emulation_control", true},
         {"memory_access", true},
         {"input_control", true},
-        {"save_states", false},
-        {"screenshots", false}
+        {"save_states", true},
+        {"screenshots", true}
     };
     
     res.set_content(response.dump(), "application/json");
