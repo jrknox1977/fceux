@@ -83,6 +83,7 @@
 #include "Qt/RestApi/CommandQueue.h"
 #include "Qt/RestApi/CommandQueue_fwd.h"
 #include "Qt/RestApi/RestApiCommands.h"
+#include "Qt/RestApi/Commands/InputCommands.h"
 #endif
 //*****************************************************************
 // Define Global Variables to be shared with FCEU Core
@@ -1617,6 +1618,9 @@ int  fceuWrapperUpdate( void )
 #ifdef __FCEU_REST_API_ENABLE__
 		// Process REST API commands early in the frame
 		processApiCommands();
+		
+		// Process pending button releases
+		InputReleaseManager::processPendingReleases();
 #endif
 
 #ifdef __FCEU_QSCRIPT_ENABLE__

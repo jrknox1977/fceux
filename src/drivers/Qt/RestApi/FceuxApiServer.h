@@ -44,6 +44,11 @@ private:
      * @brief Get current ISO 8601 timestamp
      */
     QString getCurrentTimestamp() const;
+    
+    /**
+     * @brief Handle errors for input endpoints
+     */
+    void handleInputError(const std::runtime_error& e, httplib::Response& res);
 };
 
 #endif // __FCEUX_API_SERVER_H__

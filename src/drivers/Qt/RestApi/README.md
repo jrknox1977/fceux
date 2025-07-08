@@ -72,6 +72,33 @@ The REST API is enabled with the CMake option:
 cmake .. -DREST_API=ON
 ```
 
+## Available Endpoints
+
+### System
+- `GET /api/system/info` - Get FCEUX version and system information
+- `GET /api/system/ping` - Health check endpoint
+- `GET /api/system/capabilities` - List available API features
+
+### Emulation Control
+- `POST /api/emulation/pause` - Pause emulation
+- `POST /api/emulation/resume` - Resume emulation
+- `GET /api/emulation/status` - Get current emulation status
+
+### ROM Information
+- `GET /api/rom/info` - Get information about loaded ROM
+
+### Memory Access
+- `GET /api/memory/{address}` - Read a single byte from memory
+- `GET /api/memory/range/{start}/{size}` - Read multiple bytes (max 4096)
+
+### Input Control
+- `GET /api/input/status` - Get current controller state
+- `POST /api/input/port/{port}/press` - Press buttons with optional duration
+- `POST /api/input/port/{port}/release` - Release specific or all buttons
+- `POST /api/input/port/{port}/state` - Set complete controller state
+
+See [INPUT_API_DOCUMENTATION.md](../../../../INPUT_API_DOCUMENTATION.md) for detailed input control documentation.
+
 ## Architecture
 
 ### Threading Model
