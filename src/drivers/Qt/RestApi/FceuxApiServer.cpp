@@ -4,8 +4,14 @@
 #include "../../../version.h"
 #include "EmulationController.h"
 #include "RomInfoController.h"
+#include "CommandQueue.h"
+#include "CommandExecution.h"
+#include "Commands/MemoryReadCommand.h"
+#include "Utils/AddressParser.h"
 #include <QDateTime>
 #include <QtGlobal>
+#include <memory>
+#include <stdexcept>
 
 using json = nlohmann::json;
 
@@ -39,6 +45,60 @@ void FceuxApiServer::registerRoutes()
     
     // ROM information endpoint
     addGetRoute("/api/rom/info", RomInfoController::handleRomInfo);
+    
+    // Memory access endpoints
+    addGetRoute("/api/memory/([0-9a-fA-Fx]+)", 
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Extract address from URL parameter
+                std::string addressStr = req.matches[1];
+                
+                // Parse address using utility
+                uint16_t address = parseAddress(QString::fromStdString(addressStr));
+                
+                // Create command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<MemoryReadResult>>(new MemoryReadCommand(address));
+                
+                // Execute command with 1 second timeout
+                auto future = executeCommand(std::move(cmd), 1000);
+                
+                // Wait for result
+                MemoryReadResult result = waitForResult(future, 1000);
+                
+                // Return success response
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                // Handle specific errors
+                std::string errorMsg = e.what();
+                json error;
+                error["error"] = errorMsg;
+                
+                // Map error messages to appropriate HTTP status codes
+                if (errorMsg.find("Invalid address") != std::string::npos ||
+                    errorMsg.find("Address out of range") != std::string::npos ||
+                    errorMsg.find("Invalid hex format") != std::string::npos) {
+                    res.status = 400;  // Bad Request
+                } else if (errorMsg == "No game loaded" || 
+                          errorMsg == "No ROM loaded") {
+                    res.status = 503;  // Service Unavailable
+                } else if (errorMsg == "Command execution timeout") {
+                    res.status = 504;  // Gateway Timeout
+                } else {
+                    res.status = 500;  // Internal Server Error
+                }
+                
+                res.set_content(error.dump(), "application/json");
+                
+            } catch (const std::exception& e) {
+                // Handle any other exceptions
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
     
     // TODO: Add input validation framework for future POST/PUT endpoints
 }
@@ -96,13 +156,14 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         "/api/emulation/pause",
         "/api/emulation/resume",
         "/api/emulation/status",
-        "/api/rom/info"
+        "/api/rom/info",
+        "/api/memory/{address}"
     });
     
     // Feature flags
     response["features"] = {
         {"emulation_control", true},
-        {"memory_access", false},
+        {"memory_access", true},
         {"save_states", false},
         {"screenshots", false}
     };
