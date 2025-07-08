@@ -719,6 +719,7 @@ if ( ${REST_API} )
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/InputApi.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/ScreenshotCommands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/SaveStateCommands.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/MemoryRangeCommands.cpp
   )
 endif()
 

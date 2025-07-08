@@ -10,6 +10,7 @@
 #include "Commands/InputCommands.h"
 #include "Commands/ScreenshotCommands.h"
 #include "Commands/SaveStateCommands.h"
+#include "Commands/MemoryRangeCommands.h"
 #include "InputApi.h"
 #include "Utils/AddressParser.h"
 #include <QDateTime>
@@ -100,6 +101,224 @@ void FceuxApiServer::registerRoutes()
             } catch (const std::exception& e) {
                 // Handle any other exceptions
                 res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    // Memory range read endpoint
+    addGetRoute("/api/memory/range/([0-9a-fA-Fx]+)/([0-9]+)",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Extract parameters from URL
+                std::string startStr = req.matches[1];
+                std::string lengthStr = req.matches[2];
+                
+                // Parse start address
+                uint16_t startAddress = parseAddress(QString::fromStdString(startStr));
+                
+                // Parse length
+                uint16_t length = std::stoi(lengthStr);
+                
+                // Create command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<MemoryRangeResult>>(
+                    new MemoryRangeReadCommand(startAddress, length));
+                
+                // Execute with 2 second timeout for larger reads
+                auto future = executeCommand(std::move(cmd), 2000);
+                MemoryRangeResult result = waitForResult(future, 2000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                std::string errorMsg = e.what();
+                json error;
+                error["error"] = errorMsg;
+                
+                if (errorMsg.find("Invalid address") != std::string::npos ||
+                    errorMsg.find("Address range exceeds") != std::string::npos ||
+                    errorMsg.find("Length must be") != std::string::npos ||
+                    errorMsg.find("Length exceeds maximum") != std::string::npos) {
+                    res.status = 400;  // Bad Request
+                } else if (errorMsg == "No game loaded") {
+                    res.status = 503;  // Service Unavailable
+                } else if (errorMsg == "Command execution timeout") {
+                    res.status = 504;  // Gateway Timeout
+                } else {
+                    res.status = 500;  // Internal Server Error
+                }
+                
+                res.set_content(error.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    // Memory range write endpoint
+    addPostRoute("/api/memory/range/([0-9a-fA-Fx]+)",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Extract start address from URL
+                std::string startStr = req.matches[1];
+                uint16_t startAddress = parseAddress(QString::fromStdString(startStr));
+                
+                // Parse JSON body for base64 data
+                json body = json::parse(req.body);
+                if (!body.contains("data") || !body["data"].is_string()) {
+                    throw std::runtime_error("Missing or invalid 'data' field");
+                }
+                
+                // Decode base64 data
+                std::string base64Data = body["data"];
+                QByteArray encodedData = QByteArray::fromStdString(base64Data);
+                QByteArray decodedData = QByteArray::fromBase64(encodedData);
+                
+                // Convert to vector
+                std::vector<uint8_t> data;
+                data.reserve(decodedData.size());
+                for (int i = 0; i < decodedData.size(); i++) {
+                    data.push_back(static_cast<uint8_t>(decodedData[i]));
+                }
+                
+                // Create command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<MemoryWriteResult>>(
+                    new MemoryRangeWriteCommand(startAddress, data));
+                
+                // Execute with 2 second timeout
+                auto future = executeCommand(std::move(cmd), 2000);
+                MemoryWriteResult result = waitForResult(future, 2000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                std::string errorMsg = e.what();
+                json error;
+                error["error"] = errorMsg;
+                
+                if (errorMsg.find("Invalid address") != std::string::npos ||
+                    errorMsg.find("Address range exceeds") != std::string::npos ||
+                    errorMsg.find("Length must be") != std::string::npos ||
+                    errorMsg.find("Length exceeds maximum") != std::string::npos) {
+                    res.status = 400;  // Bad Request
+                } else if (errorMsg == "No game loaded") {
+                    res.status = 503;  // Service Unavailable
+                } else if (errorMsg == "Command execution timeout") {
+                    res.status = 504;  // Gateway Timeout
+                } else {
+                    res.status = 500;  // Internal Server Error
+                }
+                
+                res.set_content(error.dump(), "application/json");
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    // Memory batch operations endpoint
+    addPostRoute("/api/memory/batch",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Parse JSON body
+                json body = json::parse(req.body);
+                if (!body.contains("operations") || !body["operations"].is_array()) {
+                    throw std::runtime_error("Missing or invalid 'operations' array");
+                }
+                
+                // Parse operations
+                std::vector<BatchOperation> operations;
+                for (const auto& op : body["operations"]) {
+                    BatchOperation batchOp;
+                    
+                    // Get operation type
+                    if (!op.contains("type") || !op["type"].is_string()) {
+                        throw std::runtime_error("Missing or invalid operation 'type'");
+                    }
+                    batchOp.type = op["type"];
+                    
+                    // Get address
+                    if (!op.contains("address") || !op["address"].is_string()) {
+                        throw std::runtime_error("Missing or invalid 'address'");
+                    }
+                    std::string addrStr = op["address"];
+                    batchOp.address = parseAddress(QString::fromStdString(addrStr));
+                    
+                    // Handle type-specific fields
+                    if (batchOp.type == "read") {
+                        if (!op.contains("length") || !op["length"].is_number_integer()) {
+                            throw std::runtime_error("Read operation missing 'length'");
+                        }
+                        batchOp.length = op["length"];
+                    } else if (batchOp.type == "write") {
+                        if (!op.contains("data") || !op["data"].is_string()) {
+                            throw std::runtime_error("Write operation missing 'data'");
+                        }
+                        
+                        // Decode base64 data
+                        std::string base64Data = op["data"];
+                        QByteArray encodedData = QByteArray::fromStdString(base64Data);
+                        QByteArray decodedData = QByteArray::fromBase64(encodedData);
+                        
+                        // Convert to vector
+                        batchOp.data.reserve(decodedData.size());
+                        for (int i = 0; i < decodedData.size(); i++) {
+                            batchOp.data.push_back(static_cast<uint8_t>(decodedData[i]));
+                        }
+                    }
+                    
+                    operations.push_back(batchOp);
+                }
+                
+                // Create command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<MemoryBatchResult>>(
+                    new MemoryBatchCommand(operations));
+                
+                // Execute with 5 second timeout for batch operations
+                auto future = executeCommand(std::move(cmd), 5000);
+                MemoryBatchResult result = waitForResult(future, 5000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                std::string errorMsg = e.what();
+                json error;
+                error["error"] = errorMsg;
+                
+                if (errorMsg.find("Invalid address") != std::string::npos ||
+                    errorMsg.find("Address range exceeds") != std::string::npos ||
+                    errorMsg.find("Length must be") != std::string::npos ||
+                    errorMsg.find("Length exceeds maximum") != std::string::npos) {
+                    res.status = 400;  // Bad Request
+                } else if (errorMsg == "No game loaded") {
+                    res.status = 503;  // Service Unavailable
+                } else if (errorMsg == "Command execution timeout") {
+                    res.status = 504;  // Gateway Timeout
+                } else {
+                    res.status = 500;  // Internal Server Error
+                }
+                
+                res.set_content(error.dump(), "application/json");
+            } catch (const json::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
                 json error;
                 error["error"] = e.what();
                 res.set_content(error.dump(), "application/json");
@@ -472,6 +691,9 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         "/api/emulation/status",
         "/api/rom/info",
         "/api/memory/{address}",
+        "/api/memory/range/{start}/{length}",
+        "/api/memory/range/{start}",
+        "/api/memory/batch",
         "/api/input/status",
         "/api/input/port/{port}/press",
         "/api/input/port/{port}/release",
@@ -487,6 +709,7 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
     response["features"] = {
         {"emulation_control", true},
         {"memory_access", true},
+        {"memory_range_access", true},
         {"input_control", true},
         {"save_states", true},
         {"screenshots", true}
