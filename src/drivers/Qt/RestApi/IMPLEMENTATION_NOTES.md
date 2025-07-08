@@ -48,10 +48,48 @@ src/drivers/Qt/RestApi/
 ### Global State
 - `GameInfo` - global pointer to current game info
 - Check `GameInfo != NULL` before accessing
-- `GameInfo->battery` - bool indicating if SRAM is present
+- `joy[4]` - global array for controller states (from `input.cpp`)
+- `currFrameCounter` - current emulation frame count (from `fceu.cpp`)
 
-### Memory Ranges
-- RAM: 0x0000-0x07FF (2KB)
+## Input Control Implementation
+
+### Architecture
+The input control system uses a Lua-style overlay mask approach:
+
+1. **Overlay Masks** (in `InputApi.h/cpp`):
+   - `apiJoypadMask1[4]` - AND mask for each controller
+   - `apiJoypadMask2[4]` - OR mask for each controller
+   - Applied during `UpdateGP()` in `input.cpp`
+
+2. **Integration Points**:
+   - `input.cpp`: Added `FCEU_ApiReadJoypad()` calls in `UpdateGP()`
+   - `fceuWrapper.cpp`: Added `InputReleaseManager::processPendingReleases()`
+   - Must include `InputApi.h` under `#ifdef __FCEU_REST_API_ENABLE__`
+
+3. **Command Classes** (in `Commands/InputCommands.h/cpp`):
+   - `InputStatusCommand` - Read current button states
+   - `InputPressCommand` - Press buttons with duration
+   - `InputReleaseCommand` - Release specific buttons
+   - `InputStateCommand` - Set complete controller state
+
+### Button Bit Mapping
+```cpp
+#define JOY_A      0x01  // A button
+#define JOY_B      0x02  // B button
+#define JOY_SELECT 0x04  // Select
+#define JOY_START  0x08  // Start
+#define JOY_UP     0x10  // D-pad up
+#define JOY_DOWN   0x20  // D-pad down
+#define JOY_LEFT   0x40  // D-pad left
+#define JOY_RIGHT  0x80  // D-pad right
+```
+
+### Key Implementation Details
+1. **DO NOT** directly modify `joy[]` array - it gets overwritten
+2. **DO** use overlay masks that get applied during input polling
+3. Frame-based timing: ~60 FPS (16.67ms per frame)
+4. Masks reset after each frame for single-frame effect
+5. Follow Lua's pattern: `joyl = (joyl & mask1) | mask2`
 - SRAM: 0x6000-0x7FFF (battery-backed, conditional on GameInfo->battery)
 
 ### Testing Pattern

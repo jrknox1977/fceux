@@ -36,6 +36,10 @@
 #include "fds.h"
 #include "driver.h"
 
+#ifdef __FCEU_REST_API_ENABLE__
+#include "drivers/Qt/RestApi/InputApi.h"
+#endif
+
 #ifdef WIN32
 #include "drivers/win/main.h"
 #include "drivers/win/memwatch.h"
@@ -256,6 +260,11 @@ static void UpdateGP(int w, void *data, int arg)
 		joy[0]= FCEU_JSReadJoypad(0,joy[0]);
 		joy[2]= FCEU_JSReadJoypad(2,joy[2]);
 		#endif
+		
+		#ifdef __FCEU_REST_API_ENABLE__
+		joy[0] = FCEU_ApiReadJoypad(0, joy[0]);
+		joy[2] = FCEU_ApiReadJoypad(2, joy[2]);
+		#endif
 	}
 	else
 	{
@@ -272,6 +281,11 @@ static void UpdateGP(int w, void *data, int arg)
 		#ifdef __FCEU_QSCRIPT_ENABLE__
 		joy[1]= FCEU_JSReadJoypad(1,joy[1]);
 		joy[3]= FCEU_JSReadJoypad(3,joy[3]);
+		#endif
+		
+		#ifdef __FCEU_REST_API_ENABLE__
+		joy[1] = FCEU_ApiReadJoypad(1, joy[1]);
+		joy[3] = FCEU_ApiReadJoypad(3, joy[3]);
 		#endif
 	}
 }

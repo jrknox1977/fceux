@@ -8,6 +8,7 @@
 #include "CommandExecution.h"
 #include "Commands/MemoryReadCommand.h"
 #include "Commands/InputCommands.h"
+#include "InputApi.h"
 #include "Utils/AddressParser.h"
 #include <QDateTime>
 #include <QtGlobal>
@@ -19,6 +20,8 @@ using json = nlohmann::json;
 FceuxApiServer::FceuxApiServer(QObject* parent)
     : RestApiServer(parent)
 {
+    // Initialize the API input system
+    FCEU_ApiInputInit();
 }
 
 void FceuxApiServer::registerRoutes()

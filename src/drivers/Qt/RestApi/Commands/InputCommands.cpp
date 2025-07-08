@@ -3,6 +3,7 @@
 #include "../../../../fceu.h"
 #include "../../fceuWrapper.h"
 #include "../../../../lib/json.hpp"
+#include "../InputApi.h"
 #include <stdexcept>
 #include <sstream>
 #include <iomanip>
@@ -65,8 +66,10 @@ void InputReleaseManager::processPendingReleases() {
     
     while (it != pendingReleases.end()) {
         if (currentFrame >= it->releaseFrame) {
-            // Release the buttons
-            joy[it->port] &= ~it->buttonMask;
+            // Clear the API overlay for these buttons
+            // This will stop forcing them on
+            uint8_t currentMask2 = apiJoypadMask2[it->port];
+            apiJoypadMask2[it->port] = currentMask2 & ~it->buttonMask;
             it = pendingReleases.erase(it);
         } else {
             ++it;
@@ -198,8 +201,9 @@ void InputPressCommand::execute() {
         // Convert button names to bitmask
         uint8_t buttonMask = buttonNamesToBitmask(buttons);
         
-        // Set the buttons
-        joy[port] |= buttonMask;
+        // Use the API overlay system to press buttons
+        // This sets bits in the OR mask to force buttons on
+        FCEU_ApiSetJoypad(port, buttonMask, true);
         
         // Schedule release if duration specified
         if (durationMs > 0) {
@@ -210,6 +214,9 @@ void InputPressCommand::execute() {
             
             int releaseFrame = currFrameCounter + frames;
             InputReleaseManager::addPendingRelease(port, buttonMask, releaseFrame);
+        } else {
+            // If no duration, press for one frame only
+            InputReleaseManager::addPendingRelease(port, buttonMask, currFrameCounter + 1);
         }
         
         result.success = true;
@@ -245,13 +252,14 @@ void InputReleaseCommand::execute() {
     
     try {
         if (buttons.empty()) {
-            // Release all buttons
-            joy[port] = 0;
+            // Release all buttons - clear all API control
+            FCEU_ApiClearJoypad(port);
             result.buttonsReleased = bitmaskToButtonNames(0xFF);
         } else {
             // Release specific buttons
             uint8_t buttonMask = buttonNamesToBitmask(buttons);
-            joy[port] &= ~buttonMask;
+            // Clear these buttons from the OR mask
+            apiJoypadMask2[port] &= ~buttonMask;
             result.buttonsReleased = buttons;
         }
         
@@ -286,23 +294,36 @@ void InputStateCommand::execute() {
     }
     
     // Build new state from button map
-    uint8_t newJoyState = 0;
-    for (const auto& pair : state) {
-        auto it = buttonNameMap.find(pair.first);
-        if (it == buttonNameMap.end()) {
-            FCEU_WRAPPER_UNLOCK();
-            throw std::runtime_error("Invalid button name: " + pair.first);
-        }
-        if (pair.second) {
-            newJoyState |= it->second;
+    uint8_t buttonsToPress = 0;
+    uint8_t buttonsToClear = 0;
+    
+    // First, determine which buttons should be on/off
+    for (const auto& pair : buttonNameMap) {
+        auto stateIt = state.find(pair.first);
+        if (stateIt != state.end() && stateIt->second) {
+            // Button should be pressed
+            buttonsToPress |= pair.second;
+        } else {
+            // Button should be released
+            buttonsToClear |= pair.second;
         }
     }
     
-    // Set the complete state
-    joy[port] = newJoyState;
+    // Clear all API control first
+    FCEU_ApiClearJoypad(port);
+    
+    // Force buttons on using OR mask
+    if (buttonsToPress) {
+        FCEU_ApiSetJoypad(port, buttonsToPress, true);
+    }
+    
+    // Force buttons off using AND mask
+    if (buttonsToClear) {
+        FCEU_ApiSetJoypad(port, buttonsToClear, false);
+    }
     
     result.success = true;
-    result.state = newJoyState;
+    result.state = buttonsToPress;  // Return what buttons are being pressed
     
     FCEU_WRAPPER_UNLOCK();
     
