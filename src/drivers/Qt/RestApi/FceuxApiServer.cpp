@@ -335,7 +335,7 @@ void FceuxApiServer::registerRoutes()
                 std::string addressStr = req.matches[1];
                 
                 // Parse address using utility
-                uint16_t address = parseAddress(QString::fromStdString(addressStr));
+                uint16_t address = parsePpuAddress(QString::fromStdString(addressStr));
                 
                 // Create command
                 auto cmd = std::unique_ptr<ApiCommandWithResult<PpuMemoryReadResult>>(new PpuMemoryReadCommand(address));
@@ -390,7 +390,7 @@ void FceuxApiServer::registerRoutes()
                 std::string lengthStr = req.matches[2];
                 
                 // Parse start address
-                uint16_t startAddress = parseAddress(QString::fromStdString(startStr));
+                uint16_t startAddress = parsePpuAddress(QString::fromStdString(startStr));
                 
                 // Parse length
                 uint16_t length = std::stoi(lengthStr);
