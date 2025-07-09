@@ -11,6 +11,8 @@
 #include "Commands/ScreenshotCommands.h"
 #include "Commands/SaveStateCommands.h"
 #include "Commands/MemoryRangeCommands.h"
+#include "Commands/PpuMemoryReadCommand.h"
+#include "Commands/PpuMemoryRangeCommand.h"
 #include "InputApi.h"
 #include "Utils/AddressParser.h"
 #include <QDateTime>
@@ -316,6 +318,114 @@ void FceuxApiServer::registerRoutes()
                 res.status = 400;
                 json error;
                 error["error"] = std::string("Invalid JSON: ") + e.what();
+                res.set_content(error.dump(), "application/json");
+            } catch (const std::exception& e) {
+                res.status = 400;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    // PPU memory access endpoints
+    addGetRoute("/api/ppu/memory/([0-9a-fA-Fx]+)", 
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Extract address from URL parameter
+                std::string addressStr = req.matches[1];
+                
+                // Parse address using utility
+                uint16_t address = parsePpuAddress(QString::fromStdString(addressStr));
+                
+                // Create command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<PpuMemoryReadResult>>(new PpuMemoryReadCommand(address));
+                
+                // Execute command with 1 second timeout
+                auto future = executeCommand(std::move(cmd), 1000);
+                
+                // Wait for result
+                PpuMemoryReadResult result = waitForResult(future, 1000);
+                
+                // Return success response
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                // Handle specific errors
+                std::string errorMsg = e.what();
+                json error;
+                error["error"] = errorMsg;
+                
+                // Map error messages to appropriate HTTP status codes
+                if (errorMsg.find("PPU address out of range") != std::string::npos ||
+                    errorMsg.find("Invalid address") != std::string::npos ||
+                    errorMsg.find("Invalid hex format") != std::string::npos) {
+                    res.status = 400;  // Bad Request
+                } else if (errorMsg == "No game loaded" || 
+                          errorMsg == "PPU read function not available") {
+                    res.status = 503;  // Service Unavailable
+                } else if (errorMsg == "Command execution timeout") {
+                    res.status = 504;  // Gateway Timeout
+                } else {
+                    res.status = 500;  // Internal Server Error
+                }
+                
+                res.set_content(error.dump(), "application/json");
+                
+            } catch (const std::exception& e) {
+                // Handle any other exceptions
+                res.status = 500;
+                json error;
+                error["error"] = e.what();
+                res.set_content(error.dump(), "application/json");
+            }
+        });
+    
+    // PPU memory range read endpoint
+    addGetRoute("/api/ppu/memory/range/([0-9a-fA-Fx]+)/([0-9]+)",
+        [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                // Extract parameters from URL
+                std::string startStr = req.matches[1];
+                std::string lengthStr = req.matches[2];
+                
+                // Parse start address
+                uint16_t startAddress = parsePpuAddress(QString::fromStdString(startStr));
+                
+                // Parse length
+                uint16_t length = std::stoi(lengthStr);
+                
+                // Create command
+                auto cmd = std::unique_ptr<ApiCommandWithResult<PpuMemoryRangeResult>>(
+                    new PpuMemoryRangeCommand(startAddress, length));
+                
+                // Execute with 2 second timeout for larger reads
+                auto future = executeCommand(std::move(cmd), 2000);
+                PpuMemoryRangeResult result = waitForResult(future, 2000);
+                
+                res.status = 200;
+                res.set_content(result.toJson(), "application/json");
+                
+            } catch (const std::runtime_error& e) {
+                std::string errorMsg = e.what();
+                json error;
+                error["error"] = errorMsg;
+                
+                if (errorMsg.find("PPU start address out of range") != std::string::npos ||
+                    errorMsg.find("PPU address out of range") != std::string::npos ||
+                    errorMsg.find("Range exceeds PPU memory bounds") != std::string::npos ||
+                    errorMsg.find("Length must be") != std::string::npos ||
+                    errorMsg.find("Length exceeds maximum") != std::string::npos) {
+                    res.status = 400;  // Bad Request
+                } else if (errorMsg == "No game loaded" || 
+                          errorMsg == "PPU read function not available") {
+                    res.status = 503;  // Service Unavailable
+                } else if (errorMsg == "Command execution timeout") {
+                    res.status = 504;  // Gateway Timeout
+                } else {
+                    res.status = 500;  // Internal Server Error
+                }
+                
                 res.set_content(error.dump(), "application/json");
             } catch (const std::exception& e) {
                 res.status = 400;
@@ -694,6 +804,8 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         "/api/memory/range/{start}/{length}",
         "/api/memory/range/{start}",
         "/api/memory/batch",
+        "/api/ppu/memory/{address}",
+        "/api/ppu/memory/range/{start}/{length}",
         "/api/input/status",
         "/api/input/port/{port}/press",
         "/api/input/port/{port}/release",
