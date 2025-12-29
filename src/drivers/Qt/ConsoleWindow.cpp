@@ -329,7 +329,10 @@ consoleWin_t::consoleWin_t(QWidget *parent)
 		// Load configuration and start server
 		RestApiConfig apiConfig = loadRestApiConfig();
 		apiServer->setConfig(apiConfig);
-		apiServer->start();
+		if (!apiServer->start()) {
+			// Error will be reported via errorOccurred signal
+			printf("REST API: Failed to start server on startup\n");
+		}
 	}
 #endif
 }
@@ -3410,10 +3413,14 @@ void consoleWin_t::toggleRestApiServer(bool checked)
 
 void consoleWin_t::onRestApiServerStarted(void)
 {
+	if (!apiServer) {
+		return;
+	}
+
 	RestApiConfig config = apiServer->getConfig();
-	FCEU_DispMessage("REST API server started on %s:%d", 0, 
+	FCEU_DispMessage("REST API server started on %s:%d", 0,
 		config.bindAddress.toStdString().c_str(), config.port);
-	
+
 	// Update status bar
 	if (this->statusBar()) {
 		this->statusBar()->showMessage(
@@ -3465,7 +3472,13 @@ RestApiConfig consoleWin_t::loadRestApiConfig(void)
 	
 	apiConfig.port = port;
 	apiConfig.bindAddress = QString::fromStdString(bindAddr);
-	
+
+	// Set longer timeouts for video streaming support
+	// Video streams can run indefinitely, so we use a long write timeout
+	// The read timeout can stay short since clients don't send much data
+	apiConfig.readTimeoutSec = 30;      // 30 seconds for client requests
+	apiConfig.writeTimeoutSec = 3600;   // 1 hour for video streaming
+
 	return apiConfig;
 }
 #endif
