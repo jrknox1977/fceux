@@ -222,6 +222,24 @@ The implementation uses a double-buffering pattern:
 
 This ensures the emulator is never blocked waiting for network I/O.
 
+### Server Timeouts
+
+The REST API server is configured with timeouts optimized for video streaming:
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| Write Timeout | 3600s (1 hour) | Allows long-running video streams |
+| Read Timeout | 30s | Client request timeout |
+
+These timeouts are set in `ConsoleWindow.cpp:loadRestApiConfig()`. The long write
+timeout ensures streams don't disconnect during extended sessions (e.g., RL training
+runs, long gameplay recordings).
+
+**Note:** Streams will stay connected indefinitely as long as:
+- The client continues reading frames
+- The emulator is running
+- No network interruption occurs
+
 ---
 
 ## Troubleshooting
