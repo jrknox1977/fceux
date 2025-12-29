@@ -722,6 +722,8 @@ if ( ${REST_API} )
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/InputCommands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/InputApi.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/ScreenshotCommands.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/VideoStream.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/VideoStreamCommands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/SaveStateCommands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/MemoryRangeCommands.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/drivers/Qt/RestApi/Commands/PpuMemoryReadCommand.cpp

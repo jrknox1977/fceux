@@ -10,6 +10,8 @@
 #include "Commands/InputCommands.h"
 #include "Commands/ScreenshotCommands.h"
 #include "Commands/SaveStateCommands.h"
+#include "Commands/VideoStreamCommands.h"  // MJPEG streaming for CV
+#include "VideoStream.h"                   // Video stream manager
 #include "Commands/MemoryRangeCommands.h"
 #include "Commands/PpuMemoryReadCommand.h"
 #include "Commands/PpuMemoryRangeCommand.h"
@@ -165,10 +167,19 @@ void FceuxApiServer::registerRoutes()
     addPostRoute("/api/memory/range/([0-9a-fA-Fx]+)",
         [this](const httplib::Request& req, httplib::Response& res) {
             try {
+                // Validate request body is not empty
+                if (req.body.empty()) {
+                    res.status = 400;
+                    json error;
+                    error["error"] = "Request body is required";
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+
                 // Extract start address from URL
                 std::string startStr = req.matches[1];
                 uint16_t startAddress = parseAddress(QString::fromStdString(startStr));
-                
+
                 // Parse JSON body for base64 data
                 json body = json::parse(req.body);
                 if (!body.contains("data") || !body["data"].is_string()) {
@@ -179,14 +190,20 @@ void FceuxApiServer::registerRoutes()
                 std::string base64Data = body["data"];
                 QByteArray encodedData = QByteArray::fromStdString(base64Data);
                 QByteArray decodedData = QByteArray::fromBase64(encodedData);
-                
+
+                // Validate decoded size (limit to 8KB to prevent memory exhaustion)
+                const int MAX_WRITE_SIZE = 8192;
+                if (decodedData.size() > MAX_WRITE_SIZE) {
+                    throw std::runtime_error("Data size exceeds maximum allowed (8KB)");
+                }
+
                 // Convert to vector
                 std::vector<uint8_t> data;
                 data.reserve(decodedData.size());
                 for (int i = 0; i < decodedData.size(); i++) {
                     data.push_back(static_cast<uint8_t>(decodedData[i]));
                 }
-                
+
                 // Create command
                 auto cmd = std::unique_ptr<ApiCommandWithResult<MemoryWriteResult>>(
                     new MemoryRangeWriteCommand(startAddress, data));
@@ -234,6 +251,15 @@ void FceuxApiServer::registerRoutes()
     addPostRoute("/api/memory/batch",
         [this](const httplib::Request& req, httplib::Response& res) {
             try {
+                // Validate request body is not empty
+                if (req.body.empty()) {
+                    res.status = 400;
+                    json error;
+                    error["error"] = "Request body is required";
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+
                 // Parse JSON body
                 json body = json::parse(req.body);
                 if (!body.contains("operations") || !body["operations"].is_array()) {
@@ -268,12 +294,18 @@ void FceuxApiServer::registerRoutes()
                         if (!op.contains("data") || !op["data"].is_string()) {
                             throw std::runtime_error("Write operation missing 'data'");
                         }
-                        
+
                         // Decode base64 data
                         std::string base64Data = op["data"];
                         QByteArray encodedData = QByteArray::fromStdString(base64Data);
                         QByteArray decodedData = QByteArray::fromBase64(encodedData);
-                        
+
+                        // Validate decoded size per operation (limit to 4KB)
+                        const int MAX_BATCH_WRITE_SIZE = 4096;
+                        if (decodedData.size() > MAX_BATCH_WRITE_SIZE) {
+                            throw std::runtime_error("Batch write data size exceeds maximum allowed (4KB per operation)");
+                        }
+
                         // Convert to vector
                         batchOp.data.reserve(decodedData.size());
                         for (int i = 0; i < decodedData.size(); i++) {
@@ -452,9 +484,18 @@ void FceuxApiServer::registerRoutes()
     addPostRoute("/api/input/port/([12])/press",
         [this](const httplib::Request& req, httplib::Response& res) {
             try {
+                // Validate request body is not empty
+                if (req.body.empty()) {
+                    res.status = 400;
+                    json error;
+                    error["error"] = "Request body is required";
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+
                 // Parse port number
                 int port = std::stoi(req.matches[1]);
-                
+
                 // Parse JSON body
                 json body = json::parse(req.body);
                 
@@ -473,7 +514,16 @@ void FceuxApiServer::registerRoutes()
                 
                 // Get optional duration
                 int duration = body.value("duration_ms", 16);
-                
+
+                // Log the input press
+                std::string btnList;
+                for (size_t i = 0; i < buttons.size(); i++) {
+                    if (i > 0) btnList += "+";
+                    btnList += buttons[i];
+                }
+                FCEU_printf("REST API: Input press port=%d buttons=[%s] duration=%dms\n",
+                       port, btnList.c_str(), duration);
+
                 // Create and execute command
                 auto cmd = std::unique_ptr<ApiCommandWithResult<InputPressResult>>(
                     new InputPressCommand(port, buttons, duration));
@@ -512,7 +562,19 @@ void FceuxApiServer::registerRoutes()
                         }
                     }
                 }
-                
+
+                // Log the input release
+                if (buttons.empty()) {
+                    FCEU_printf("REST API: Input release port=%d buttons=[ALL]\n", port);
+                } else {
+                    std::string btnList;
+                    for (size_t i = 0; i < buttons.size(); i++) {
+                        if (i > 0) btnList += "+";
+                        btnList += buttons[i];
+                    }
+                    FCEU_printf("REST API: Input release port=%d buttons=[%s]\n", port, btnList.c_str());
+                }
+
                 // Create and execute command
                 auto cmd = std::unique_ptr<ApiCommandWithResult<InputReleaseResult>>(
                     new InputReleaseCommand(port, buttons));
@@ -535,9 +597,18 @@ void FceuxApiServer::registerRoutes()
     addPostRoute("/api/input/port/([12])/state",
         [this](const httplib::Request& req, httplib::Response& res) {
             try {
+                // Validate request body is not empty
+                if (req.body.empty()) {
+                    res.status = 400;
+                    json error;
+                    error["error"] = "Request body is required";
+                    res.set_content(error.dump(), "application/json");
+                    return;
+                }
+
                 // Parse port number
                 int port = std::stoi(req.matches[1]);
-                
+
                 // Parse JSON body
                 json body = json::parse(req.body);
                 
@@ -549,7 +620,15 @@ void FceuxApiServer::registerRoutes()
                     }
                     state[it.key()] = it.value().get<bool>();
                 }
-                
+
+                // Log the input state
+                std::string stateStr;
+                for (const auto& pair : state) {
+                    if (!stateStr.empty()) stateStr += ", ";
+                    stateStr += pair.first + ":" + (pair.second ? "on" : "off");
+                }
+                FCEU_printf("REST API: Input state port=%d {%s}\n", port, stateStr.c_str());
+
                 // Create and execute command
                 auto cmd = std::unique_ptr<ApiCommandWithResult<InputStateResult>>(
                     new InputStateCommand(port, state));
@@ -630,7 +709,44 @@ void FceuxApiServer::registerRoutes()
                 res.set_content(error.dump(), "application/json");
             }
         });
-    
+
+    //=========================================================================
+    // Video Streaming Endpoints (for Computer Vision / OpenCV integration)
+    //=========================================================================
+    // These endpoints provide real-time video streaming for machine learning
+    // and computer vision applications. See docs/api/video.md for details.
+    //
+    // Usage with OpenCV:
+    //   cap = cv2.VideoCapture("http://localhost:8080/api/video/stream")
+    //   ret, frame = cap.read()  # Returns 256x240 BGR numpy array
+    //
+
+    // GET /api/video/stream - MJPEG video stream
+    // Query params: fps (1-60), quality (1-100), grayscale (0|1)
+    addGetRoute("/api/video/stream",
+        [](const httplib::Request& req, httplib::Response& res) {
+            // Delegate to the MJPEG stream handler
+            // This sets up a streaming response that runs until client disconnects
+            MjpegStreamHandler::handle(req, res);
+        });
+
+    // GET /api/video/info - Stream status information
+    addGetRoute("/api/video/info",
+        [](const httplib::Request& req, httplib::Response& res) {
+            // Build response with stream information
+            extern FCEUGI* GameInfo;
+
+            VideoStreamInfoResult result;
+            result.available = (GameInfo != nullptr);
+            result.width = VideoFrameBuffer::WIDTH;   // Always 256
+            result.height = VideoFrameBuffer::HEIGHT; // Always 240
+            result.activeClients = getVideoStreamManager().getClientCount();
+            result.totalFrames = getVideoStreamManager().getFrameBuffer().getFrameNumber();
+
+            res.status = 200;
+            res.set_content(result.toJson(), "application/json");
+        });
+
     // Save state endpoints
     addPostRoute("/api/savestate",
         [this](const httplib::Request& req, httplib::Response& res) {
@@ -812,11 +928,13 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         "/api/input/port/{port}/state",
         "/api/screenshot",
         "/api/screenshot/last",
+        "/api/video/stream",
+        "/api/video/info",
         "/api/savestate",
         "/api/loadstate",
         "/api/savestate/list"
     });
-    
+
     // Feature flags
     response["features"] = {
         {"emulation_control", true},
@@ -824,7 +942,8 @@ void FceuxApiServer::handleSystemCapabilities(const httplib::Request& req, httpl
         {"memory_range_access", true},
         {"input_control", true},
         {"save_states", true},
-        {"screenshots", true}
+        {"screenshots", true},
+        {"video_streaming", true}  // MJPEG streaming for CV/ML integration
     };
     
     res.set_content(response.dump(), "application/json");

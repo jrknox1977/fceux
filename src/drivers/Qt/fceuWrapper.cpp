@@ -84,6 +84,7 @@
 #include "Qt/RestApi/CommandQueue_fwd.h"
 #include "Qt/RestApi/RestApiCommands.h"
 #include "Qt/RestApi/Commands/InputCommands.h"
+#include "Qt/RestApi/VideoStream.h"  // MJPEG video streaming for CV integration
 #endif
 //*****************************************************************
 // Define Global Variables to be shared with FCEU Core
@@ -1641,6 +1642,17 @@ int  fceuWrapperUpdate( void )
 		{
 			qscriptMgr->frameFinishedUpdate();
 		}
+#endif
+
+#ifdef __FCEU_REST_API_ENABLE__
+		//---------------------------------------------------------------------
+		// Video Streaming: Notify the stream manager that a frame is complete
+		//---------------------------------------------------------------------
+		// This allows MJPEG streaming clients (e.g., OpenCV) to receive the
+		// current frame. The call is a no-op if no clients are connected.
+		// See: GET /api/video/stream
+		//
+		getVideoStreamManager().onFrameComplete();
 #endif
 
 		hexEditorUpdateMemoryValues();
